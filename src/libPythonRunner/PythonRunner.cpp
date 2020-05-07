@@ -70,13 +70,13 @@ bool PythonRunner::RunPyFunc(const string& file, const string& func,
     }
 
     std::string stdOutErr =
-"import sys\n\
+        "import sys\n\
 class CatchOutput:\n\
   def __init__(self):\n\
     self.value = ''\n\
     self.file = open(\'" +
-      outputFileName +
-      "\',\'w\')\n\
+        outputFileName +
+        "\',\'w\')\n\
   def write(self,msg):\n\
     self.value += msg\n\
     self.file.write(msg)\n\
@@ -88,8 +88,8 @@ sys.stdout = catchOutput\n\
 sys.stderr = catchOutput\n\
   ";
 
-  string closeOutput =
-"catchOutput.close()\n\
+    string closeOutput =
+        "catchOutput.close()\n\
 ";
 
     LOG_GENERAL(INFO, "stdOut: " << stdOutErr);
@@ -111,7 +111,7 @@ sys.stderr = catchOutput\n\
 
     PyObject* catcher = PyObject_GetAttrString(main.ptr(), "catchOutput");
     PyObject* output = PyObject_GetAttrString(catcher, "value");
-    PyRun_SimpleString(closeOutput.c_str()); //For cleaning the buffer out
+    PyRun_SimpleString(closeOutput.c_str());  // For cleaning the buffer out
 
     const string out = extract<string>(output);
 
