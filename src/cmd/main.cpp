@@ -50,6 +50,9 @@ int main(int argc, const char* argv[]) {
     string pubK;
     PrivKey privkey;
     PubKey pubkey;
+    string exchPrivK;
+    PrivKey exchPrivKey;
+    PubKey exchPubKey;
     string address;
     string logpath(boost::filesystem::absolute("./").string());
     int port = -1;
@@ -66,6 +69,9 @@ int main(int argc, const char* argv[]) {
         "privk,i", po::value<string>(&privK)->required(),
         "32-byte private key")("pubk,u", po::value<string>(&pubK)->required(),
                                "33-byte public key")(
+        "l2lsyncmode ,m", "Runs in new pull syncup mode if set")(
+        "exchangeprivk,e", po::value<string>(&exchPrivK),
+        "32-byte exchange private key")(
         "address,a", po::value<string>(&address)->required(),
         "Listen IPv4/6 address formated as \"dotted decimal\" or optionally "
         "\"dotted decimal:portnumber\" format, otherwise \"NAT\"")(
@@ -107,6 +113,26 @@ int main(int argc, const char* argv[]) {
 
       try {
         pubkey = PubKey::GetPubKeyFromString(pubK);
+      } catch (std::invalid_argument& e) {
+        std::cerr << e.what() << endl;
+        return ERROR_IN_COMMAND_LINE;
+      }
+
+      try {
+        if (vm.count("l2lsyncmode") && exchPrivK.empty()) {
+          std::cerr << "exchPrivK **NOT** provided";
+          return ERROR_IN_COMMAND_LINE;
+        }
+        if (!exchPrivK.empty()) {
+          exchPrivKey = PrivKey::GetPrivKeyFromString(exchPrivK);
+          exchPubKey = PubKey(exchPrivKey);
+        }
+      } catch (std::invalid_argument& e) {
+        std::cerr << e.what() << endl;
+        return ERROR_IN_COMMAND_LINE;
+      }
+
+      try {
       } catch (std::invalid_argument& e) {
         std::cerr << e.what() << endl;
         return ERROR_IN_COMMAND_LINE;
@@ -196,7 +222,9 @@ int main(int argc, const char* argv[]) {
     }
 
     Zilliqa zilliqa(make_pair(privkey, pubkey), my_network_info,
-                    (SyncType)syncType, vm.count("recovery"));
+                    (SyncType)syncType, vm.count("recovery"),
+                    vm.count("l2lsyncmode") > 0 ? false : true,
+                    make_pair(exchPrivKey, exchPubKey));
     auto dispatcher = [&zilliqa](pair<bytes, Peer>* message) mutable -> void {
       zilliqa.Dispatch(message);
     };

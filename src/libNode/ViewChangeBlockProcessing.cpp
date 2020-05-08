@@ -135,7 +135,7 @@ bool Node::ProcessVCBlock(const bytes& message, unsigned int cur_offset,
     return false;
   }
 
-  if (!LOOKUP_NODE_MODE && BROADCAST_TREEBASED_CLUSTER_MODE) {
+  if (BROADCAST_TREEBASED_CLUSTER_MODE) {
     // Avoid using the original message for broadcasting in case it contains
     // excess data beyond the VCBlock
     bytes message2 = {MessageType::NODE, NodeInstructionType::VCBLOCK};
@@ -143,6 +143,12 @@ bool Node::ProcessVCBlock(const bytes& message, unsigned int cur_offset,
       LOG_GENERAL(WARNING, "Messenger::SetNodeVCBlock failed");
     } else {
       SendVCBlockToOtherShardNodes(message2);
+      if (LOOKUP_NODE_MODE) {
+        // push to local store of VCBLOCKS which maintains vcblocks only of
+        // latest tx block.
+        std::lock_guard<mutex> g1(m_mutexVCBlocks);
+        m_vcBlockStore.push_back(vcblock);
+      }
     }
   }
 

@@ -68,6 +68,8 @@ class Lookup : public Executable {
   VectorOfNode m_seedNodes;
   VectorOfNode m_multipliers;
   std::mutex mutable m_mutexSeedNodes;
+  VectorOfNode m_l2lDataProviders;
+  std::mutex mutable m_mutexL2lDataProviders;
   bool m_dsInfoWaitingNotifying = false;
   bool m_fetchedDSInfo = false;
 
@@ -103,7 +105,7 @@ class Lookup : public Executable {
   /// To indicate which type of synchronization is using
   std::atomic<SyncType> m_syncType{};  // = SyncType::NO_SYNC;
 
-  void SetAboveLayer();
+  void SetAboveLayer(VectorOfNode& aboveLayer, std::string xml_node);
 
   /// Post processing after the lookup node successfully synchronized with the
   /// network
@@ -111,9 +113,6 @@ class Lookup : public Executable {
 
   // To block certain types of incoming message for certain states
   bool ToBlockMessage(unsigned char ins_byte);
-
-  /// Initialize all blockchains and blocklinkchain
-  void InitAsNewJoiner();
 
   std::mutex m_mutexSetDSBlockFromSeed;
   std::mutex m_mutexSetTxBlockFromSeed;
@@ -140,6 +139,11 @@ class Lookup : public Executable {
 
   bytes ComposeGetDSBlockMessage(uint64_t lowBlockNum, uint64_t highBlockNum,
                                  const bool includeMinerInfo = false);
+  bytes ComposeGetDSBlockMessageForL2l(uint64_t blockNum);
+  bytes ComposeGetVCFinalBlockMessageForL2l(uint64_t blockNum);
+  bytes ComposeGetMBnForwardTxnMessageForL2l(uint64_t blockNum,
+                                             uint32_t shardId);
+  bytes ComposeGetPendingTxnMessageForL2l(uint64_t blockNum, uint32_t shardId);
   bytes ComposeGetTxBlockMessage(uint64_t lowBlockNum, uint64_t highBlockNum);
   bytes ComposeGetStateDeltaMessage(uint64_t blockNum);
   bytes ComposeGetStateDeltasMessage(uint64_t lowBlockNum,
@@ -157,7 +161,8 @@ class Lookup : public Executable {
 
  public:
   /// Constructor.
-  Lookup(Mediator& mediator, SyncType syncType);
+  Lookup(Mediator& mediator, SyncType syncType, bool multiplierSyncMode = true,
+         PairOfKey exchKey = PairOfKey());
 
   /// Destructor.
   ~Lookup();
@@ -220,6 +225,8 @@ class Lookup : public Executable {
 
   void SendMessageToRandomSeedNode(const bytes& message) const;
 
+  void SendMessageToRandomL2lDataProvider(const bytes& message) const;
+
   void RectifyTxnShardMap(const uint32_t, const uint32_t);
 
   // TODO: move the Get and ProcessSet functions to Synchronizer
@@ -244,6 +251,21 @@ class Lookup : public Executable {
                                [[gnu::unused]] const Peer& from);
   bool GetDSBlockFromSeedNodes(uint64_t lowBlockNum, uint64_t highblocknum,
                                const bool includeMinerInfo = false);
+
+  // USED when MULTIPLIER_SYNC_MODE == false
+  bool GetDSBlockFromL2lDataProvider(uint64_t blockNum);
+  bool GetVCFinalBlockFromL2lDataProvider(uint64_t blockNum);
+  bool GetMBnForwardTxnFromL2lDataProvider(uint64_t blockNum, uint32_t shardId);
+  bool GetPendingTxnFromL2lDataProvider(uint64_t blockNum, uint32_t shardId);
+
+  bool ProcessGetDSBlockFromL2l(const bytes& message, unsigned int offset,
+                                const Peer& from);
+  bool ProcessGetVCFinalBlockFromL2l(const bytes& message, unsigned int offset,
+                                     const Peer& from);
+  bool ProcessGetMBnForwardTxnFromL2l(const bytes& message, unsigned int offset,
+                                      const Peer& from);
+  bool ProcessGetPendingTxnFromL2l(const bytes& message, unsigned int offset,
+                                   const Peer& from);
 
   // Get the offline lookup nodes from lookup nodes
   bool GetOfflineLookupNodes();
@@ -299,26 +321,33 @@ class Lookup : public Executable {
   bool ProcessGetStateFromSeed(const bytes& message, unsigned int offset,
                                const Peer& from);
 
-  bool ProcessGetTxnsFromLookup([[gnu::unused]] const bytes& message,
-                                [[gnu::unused]] unsigned int offset,
-                                [[gnu::unused]] const Peer& from);
+  bool ProcessGetTxnsFromLookup(const bytes& message, unsigned int offset,
+                                const Peer& from);
 
-  bool ProcessSetTxnsFromLookup([[gnu::unused]] const bytes& message,
-                                [[gnu::unused]] unsigned int offset,
-                                [[gnu::unused]] const Peer& from);
+  bool ProcessGetTxnsFromL2l(const bytes& message, unsigned int offset,
+                             const Peer& from);
+
+  bool ProcessSetTxnsFromLookup(const bytes& message, unsigned int offset,
+                                const Peer& from);
 
   void SendGetTxnFromLookup(const BlockHash& mbHash,
                             const std::vector<TxnHash>& txnhashes);
 
+  void SendGetTxnFromL2l(const BlockHash& mbHash,
+                         const std::vector<TxnHash>& txnhashes);
+
   void SendGetMicroBlockFromLookup(const std::vector<BlockHash>& mbHashes);
 
-  bool ProcessGetMicroBlockFromLookup([[gnu::unused]] const bytes& message,
-                                      [[gnu::unused]] unsigned int offset,
-                                      [[gnu::unused]] const Peer& from);
+  void SendGetMicroBlockFromL2l(const std::vector<BlockHash>& mbHashes);
 
-  bool ProcessSetMicroBlockFromLookup([[gnu::unused]] const bytes& message,
-                                      [[gnu::unused]] unsigned int offset,
-                                      [[gnu::unused]] const Peer& from);
+  bool ProcessGetMicroBlockFromLookup(const bytes& message, unsigned int offset,
+                                      const Peer& from);
+
+  bool ProcessGetMicroBlockFromL2l(const bytes& message, unsigned int offset,
+                                   const Peer& from);
+
+  bool ProcessSetMicroBlockFromLookup(const bytes& message, unsigned int offset,
+                                      const Peer& from);
 
   bool AddMicroBlockToStorage(const MicroBlock& microblock);
 
@@ -403,6 +432,9 @@ class Lookup : public Executable {
   /// Check and fetch unavailable microblocks
   void CheckAndFetchUnavailableMBs(bool skipLatestTxBlk = true);
 
+  /// used by seed node using pull option
+  void FetchMbTxPendingTxMessageFromL2l(uint64_t blockNum);
+
   /// Find any unavailable mbs from last N txblks and add to
   /// m_unavailableMicroBlocks
   void FindMissingMBsForLastNTxBlks(const uint32_t& num);
@@ -460,6 +492,30 @@ class Lookup : public Executable {
 
   // For use by lookup for dispatching transactions
   std::atomic<bool> m_sendSCCallsToDS{};
+
+  // exchange key
+  PairOfKey m_exchKey;
+
+  std::mutex m_mutexExchangeWhitelisted;
+  std::unordered_set<PubKey> m_exchangeWhitelisted;
+  bool AddToWhitelistExchange(const PubKey& pubKey);
+  bool RemoveFromWhitelistExchange(const PubKey& pubKey);
+  bool IsWhitelistedExchange(const PubKey& pubKey);
+
+  // VCDSblock processed variables - used by seed nodes using PULL P1 option
+  std::mutex m_mutexVCDSBlockProcessed;
+  std::condition_variable cv_vcDsBlockProcessed;
+  bool m_vcDsBlockProcessed;
+
+  // VCFinalblock processed variables - used by seed nodes using PULL P1 option
+  std::mutex m_mutexVCFinalBlockProcessed;
+  std::condition_variable cv_vcFinalBlockProcessed;
+  bool m_vcFinalBlockProcessed;
+
+  // MBnFWDTXN processed variables - used by seed nodes using PULL P1 option
+  std::mutex m_mutexMBTxnProcessed;
+  std::condition_variable cv_mbTxnProcessed;
+  bool m_mbTxnProcessed;
 };
 
 #endif  // ZILLIQA_SRC_LIBLOOKUP_LOOKUP_H_

@@ -38,6 +38,14 @@ class StatusServer : public Server,
                                                Json::Value& response) {
     response = this->AddToBlacklistExclusion(request[0u].asString());
   }
+  inline virtual void AddToExchangeWhitelist(const Json::Value& request,
+                                             Json::Value& response) {
+    response = this->AddToExchangeWhitelist(request[0u].asString());
+  }
+  inline virtual void RemoveFromExchangeWhitelist(const Json::Value& request,
+                                                  Json::Value& response) {
+    response = this->RemoveFromExchangeWhitelist(request[0u].asString());
+  }
   inline virtual void RemoveFromBlacklistExclusionI(const Json::Value& request,
                                                     Json::Value& response) {
     response = this->RemoveFromBlacklistExclusion(request[0u].asString());
@@ -75,6 +83,8 @@ class StatusServer : public Server,
 
   Json::Value IsTxnInMemPool(const std::string& tranID);
   bool AddToBlacklistExclusion(const std::string& ipAddr);
+  bool AddToExchangeWhitelist(const std::string& pubKeyStr);
+  bool RemoveFromExchangeWhitelist(const std::string& pubKeyStr);
   bool RemoveFromBlacklistExclusion(const std::string& ipAddr);
   std::string GetNodeState();
   std::string GetLatestEpochStatesUpdated();

@@ -62,6 +62,16 @@ StatusServer::StatusServer(Mediator& mediator,
                          "param01", jsonrpc::JSON_STRING, NULL),
       &StatusServer::RemoveFromBlacklistExclusionI);
   this->bindAndAddMethod(
+      jsonrpc::Procedure("AddToExchangeWhitelist", jsonrpc::PARAMS_BY_POSITION,
+                         jsonrpc::JSON_BOOLEAN, "param01", jsonrpc::JSON_STRING,
+                         NULL),
+      &StatusServer::AddToExchangeWhitelist);
+  this->bindAndAddMethod(
+      jsonrpc::Procedure("RemoveFromExchangeWhitelist",
+                         jsonrpc::PARAMS_BY_POSITION, jsonrpc::JSON_BOOLEAN,
+                         "param01", jsonrpc::JSON_STRING, NULL),
+      &StatusServer::RemoveFromExchangeWhitelist);
+  this->bindAndAddMethod(
       jsonrpc::Procedure("GetDSCommittee", jsonrpc::PARAMS_BY_POSITION,
                          jsonrpc::JSON_OBJECT, NULL),
       &StatusServer::GetDSCommitteeI);
@@ -141,6 +151,45 @@ bool StatusServer::AddToBlacklistExclusion(const string& ipAddr) {
           "Could not add IP Address in exclusion list, already present");
     }
 
+    return true;
+
+  } catch (const JsonRpcException& je) {
+    throw je;
+  } catch (const exception& e) {
+    LOG_GENERAL(WARNING, "[Error]: " << e.what());
+    throw JsonRpcException(RPC_MISC_ERROR, "Unable to process");
+  }
+}
+
+bool StatusServer::AddToExchangeWhitelist(const string& pubKeyStr) {
+  try {
+    PubKey pubKey = PubKey::GetPubKeyFromString(pubKeyStr);
+
+    if (!m_mediator.m_lookup->AddToWhitelistExchange(pubKey)) {
+      throw JsonRpcException(
+          RPC_INVALID_PARAMETER,
+          "Could not add pub key in exchange whitelist, already present");
+    }
+
+    return true;
+
+  } catch (const JsonRpcException& je) {
+    throw je;
+  } catch (const exception& e) {
+    LOG_GENERAL(WARNING, "[Error]: " << e.what());
+    throw JsonRpcException(RPC_MISC_ERROR, "Unable to process");
+  }
+}
+
+bool StatusServer::RemoveFromExchangeWhitelist(const string& pubKeyStr) {
+  try {
+    PubKey pubKey = PubKey::GetPubKeyFromString(pubKeyStr);
+
+    if (!m_mediator.m_lookup->RemoveFromWhitelistExchange(pubKey)) {
+      throw JsonRpcException(RPC_INVALID_PARAMETER,
+                             "Could not remove pub key in exchange whitelist, "
+                             "already not present");
+    }
     return true;
 
   } catch (const JsonRpcException& je) {
