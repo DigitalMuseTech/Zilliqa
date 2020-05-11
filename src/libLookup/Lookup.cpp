@@ -65,6 +65,7 @@ Lookup::Lookup(Mediator& mediator, SyncType syncType, bool multiplierSyncMode,
     : m_mediator(mediator) {
   m_syncType.store(SyncType::NO_SYNC);
   MULTIPLIER_SYNC_MODE = multiplierSyncMode;
+  LOG_GENERAL(INFO, "MULTIPLIER_SYNC_MODE is set to " << MULTIPLIER_SYNC_MODE);
   vector<SyncType> ignorable_syncTypes = {NO_SYNC, DB_VERIF};
   if (syncType >= SYNC_TYPE_COUNT) {
     LOG_GENERAL(FATAL, "Invalid SyncType");
@@ -2981,6 +2982,8 @@ void Lookup::CommitTxBlocks(const vector<TxBlock>& txBlocks) {
           auto func = [this]() -> void {
             bool firstPull = true;
             bool dsBlockReceived = false;
+            LOG_GENERAL(INFO,
+                        "Starting the pull thread from l2l_data_providers");
             while (true) {
               if (m_mediator.GetIsVacuousEpoch() && !dsBlockReceived) {
                 // This return only after receiving next ds block

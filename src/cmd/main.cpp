@@ -69,7 +69,7 @@ int main(int argc, const char* argv[]) {
         "privk,i", po::value<string>(&privK)->required(),
         "32-byte private key")("pubk,u", po::value<string>(&pubK)->required(),
                                "33-byte public key")(
-        "l2lsyncmode ,m", "Runs in new pull syncup mode if set")(
+        "l2lsyncmode,m", "Runs in new pull syncup mode if set")(
         "exchangeprivk,e", po::value<string>(&exchPrivK),
         "32-byte exchange private key")(
         "address,a", po::value<string>(&address)->required(),
