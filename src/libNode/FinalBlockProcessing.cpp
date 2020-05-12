@@ -647,7 +647,11 @@ bool Node::ProcessFinalBlock(const bytes& message, unsigned int offset,
       m_vcBlockStore.clear();
     }
     if (LOOKUP_NODE_MODE && ARCHIVAL_LOOKUP && !MULTIPLIER_SYNC_MODE) {
-      m_mediator.m_lookup->m_vcFinalBlockProcessed = true;
+      {
+        unique_lock<mutex> lock(
+            m_mediator.m_lookup->m_mutexVCFinalBlockProcessed);
+        m_mediator.m_lookup->m_vcFinalBlockProcessed = true;
+      }
       m_mediator.m_lookup->cv_vcFinalBlockProcessed.notify_all();
     }
     return true;

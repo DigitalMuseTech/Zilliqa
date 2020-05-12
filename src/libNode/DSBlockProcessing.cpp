@@ -732,7 +732,10 @@ bool Node::ProcessVCDSBlocksMessage(const bytes& message,
     }
   }
   if (LOOKUP_NODE_MODE && ARCHIVAL_LOOKUP && !MULTIPLIER_SYNC_MODE) {
-    m_mediator.m_lookup->m_vcDsBlockProcessed = true;
+    {
+      unique_lock<mutex> lock(m_mediator.m_lookup->m_mutexVCDSBlockProcessed);
+      m_mediator.m_lookup->m_vcDsBlockProcessed = true;
+    }
     m_mediator.m_lookup->cv_vcDsBlockProcessed.notify_all();
   }
   if (LOOKUP_NODE_MODE) {

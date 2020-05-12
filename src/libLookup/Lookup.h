@@ -510,12 +510,7 @@ class Lookup : public Executable {
   // VCFinalblock processed variables - used by seed nodes using PULL P1 option
   std::mutex m_mutexVCFinalBlockProcessed;
   std::condition_variable cv_vcFinalBlockProcessed;
-  bool m_vcFinalBlockProcessed;
-
-  // MBnFWDTXN processed variables - used by seed nodes using PULL P1 option
-  std::mutex m_mutexMBTxnProcessed;
-  std::condition_variable cv_mbTxnProcessed;
-  bool m_mbTxnProcessed;
+  bool m_vcFinalBlockProcessed = false;
 };
 
 #endif  // ZILLIQA_SRC_LIBLOOKUP_LOOKUP_H_

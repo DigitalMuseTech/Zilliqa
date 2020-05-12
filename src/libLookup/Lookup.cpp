@@ -740,11 +740,11 @@ bool Lookup::GetVCFinalBlockFromL2lDataProvider(uint64_t blockNum) {
   LOG_MARKER();
 
   // loop until vcfinal block is received
+  auto getmessage = ComposeGetVCFinalBlockMessageForL2l(blockNum);
   while (!m_mediator.m_lookup->m_vcFinalBlockProcessed) {
     LOG_EPOCH(INFO, m_mediator.m_currentEpochNum,
               "GetVCFinalBlockFromL2lDataProvider for block " << blockNum);
-    SendMessageToRandomL2lDataProvider(
-        ComposeGetVCFinalBlockMessageForL2l(blockNum));
+    SendMessageToRandomL2lDataProvider(getmessage);
     unique_lock<mutex> lock(m_mediator.m_lookup->m_mutexVCFinalBlockProcessed);
     if (m_mediator.m_lookup->cv_vcFinalBlockProcessed.wait_for(
             lock, chrono::seconds(SEED_SYNC_SMALL_PULL_INTERVAL)) ==
@@ -1133,8 +1133,8 @@ void Lookup::SendMessageToRandomL2lDataProvider(const bytes& message) const {
 
   auto index =
       RandomGenerator::GetRandomInt(notBlackListedL2lDataProviders.size());
-  LOG_GENERAL(INFO,
-              "Sending message to " << notBlackListedL2lDataProviders[index]);
+  LOG_GENERAL(INFO, "Sending message to l2l : "
+                        << notBlackListedL2lDataProviders[index]);
   P2PComm::GetInstance().SendMessage(notBlackListedL2lDataProviders[index],
                                      message);
 }
@@ -2157,7 +2157,11 @@ bool Lookup::ProcessSetMicroBlockFromLookup(const bytes& message,
                           << " Recvd " << mb.GetHeader().GetEpochNum()
                           << " MBHash:" << mb.GetBlockHash());
     AddMicroBlockToStorage(mb);
-    SendGetTxnFromLookup(mb.GetBlockHash(), mb.GetTranHashes());
+    if (!MULTIPLIER_SYNC_MODE) {
+      SendGetTxnFromL2l(mb.GetBlockHash(), mb.GetTranHashes());
+    } else {
+      SendGetTxnFromLookup(mb.GetBlockHash(), mb.GetTranHashes());
+    }
   }
 
   return true;
@@ -5551,10 +5555,6 @@ void Lookup::FetchMbTxPendingTxMessageFromL2l(uint64_t blockNum) {
                     "After deleting microblock bodies with no transactions, "
                     "Unavailable count = "
                         << mbs.size());
-
-        if (mbs.empty()) {
-          break;
-        }
 
         // for each nonempty mb, send the request to l2l data provider
         const auto& microBlockInfos =
