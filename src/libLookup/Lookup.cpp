@@ -715,7 +715,8 @@ bool Lookup::GetDSBlockFromL2lDataProvider(uint64_t blockNum) {
   LOG_MARKER();
 
   // loop until ds block is received
-  while (!m_mediator.m_lookup->m_vcDsBlockProcessed) {
+  while (!m_mediator.m_lookup->m_vcDsBlockProcessed &&
+         (GetSyncType() == SyncType::NO_SYNC)) {
     LOG_EPOCH(INFO, m_mediator.m_currentEpochNum,
               "GetDSBlockFromL2lDataProvider for block " << blockNum);
     SendMessageToRandomL2lDataProvider(
@@ -729,11 +730,11 @@ bool Lookup::GetDSBlockFromL2lDataProvider(uint64_t blockNum) {
                   "GetDSBlockFromL2lDataProvider Timeout... may be ds block "
                   "yet to be mined");
     } else {
-      break;
+      m_mediator.m_lookup->m_vcDsBlockProcessed = false;
+      return true;
     }
   }
-  m_mediator.m_lookup->m_vcDsBlockProcessed = false;
-  return true;
+  return false;
 }
 
 bool Lookup::GetVCFinalBlockFromL2lDataProvider(uint64_t blockNum) {
@@ -741,7 +742,8 @@ bool Lookup::GetVCFinalBlockFromL2lDataProvider(uint64_t blockNum) {
 
   // loop until vcfinal block is received
   auto getmessage = ComposeGetVCFinalBlockMessageForL2l(blockNum);
-  while (!m_mediator.m_lookup->m_vcFinalBlockProcessed) {
+  while (!m_mediator.m_lookup->m_vcFinalBlockProcessed &&
+         (GetSyncType() == SyncType::NO_SYNC)) {
     LOG_EPOCH(INFO, m_mediator.m_currentEpochNum,
               "GetVCFinalBlockFromL2lDataProvider for block " << blockNum);
     SendMessageToRandomL2lDataProvider(getmessage);
@@ -753,12 +755,12 @@ bool Lookup::GetVCFinalBlockFromL2lDataProvider(uint64_t blockNum) {
                   "GetVCFinalBlockFromL2lDataProvider Timeout... may be "
                   "vc/final block yet to be mined");
     } else {
-      break;
+      m_mediator.m_lookup->m_vcFinalBlockProcessed = false;
+      return true;
     }
   }
-  m_mediator.m_lookup->m_vcFinalBlockProcessed = false;
 
-  return true;
+  return false;
 }
 
 bool Lookup::GetMBnForwardTxnFromL2lDataProvider(uint64_t blockNum,
@@ -2988,23 +2990,31 @@ void Lookup::CommitTxBlocks(const vector<TxBlock>& txBlocks) {
             bool dsBlockReceived = false;
             LOG_GENERAL(INFO,
                         "Starting the pull thread from l2l_data_providers");
-            while (true) {
-              if (m_mediator.GetIsVacuousEpoch() && !dsBlockReceived) {
+            while (GetSyncType() == SyncType::NO_SYNC) {
+              if ((m_mediator.m_currentEpochNum % NUM_FINAL_BLOCK_PER_POW ==
+                   0) &&
+                  !dsBlockReceived) {
                 // This return only after receiving next ds block
-                GetDSBlockFromL2lDataProvider(
-                    m_mediator.m_dsBlockChain.GetBlockCount());
-                dsBlockReceived = true;
+                if (GetDSBlockFromL2lDataProvider(
+                        m_mediator.m_dsBlockChain.GetBlockCount())) {
+                  dsBlockReceived = true;
+                } else {
+                  continue;
+                }
               } else {
                 // This returns only after receiving next vc final block
-                GetVCFinalBlockFromL2lDataProvider(
-                    m_mediator.m_txBlockChain.GetBlockCount());
-                // reset the dsblockreceived flag
-                dsBlockReceived = false;
+                if (GetVCFinalBlockFromL2lDataProvider(
+                        m_mediator.m_txBlockChain.GetBlockCount())) {
+                  // reset the dsblockreceived flag
+                  dsBlockReceived = false;
 
-                FetchMbTxPendingTxMessageFromL2l(
-                    m_mediator.m_txBlockChain.GetLastBlock()
-                        .GetHeader()
-                        .GetBlockNum());  // last block
+                  FetchMbTxPendingTxMessageFromL2l(
+                      m_mediator.m_txBlockChain.GetLastBlock()
+                          .GetHeader()
+                          .GetBlockNum());  // last block
+                } else {
+                  continue;
+                }
               }
               if (!firstPull) {
                 // we take the liberty to have longer wait window because curr
