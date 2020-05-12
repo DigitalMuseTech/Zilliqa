@@ -534,10 +534,11 @@ void Node::PrepareGoodStateForFinalBlock() {
 bool Node::ProcessVCFinalBlock(const bytes& message, unsigned int offset,
                                [[gnu::unused]] const Peer& from) {
   LOG_MARKER();
-  if (!LOOKUP_NODE_MODE) {
-    LOG_GENERAL(WARNING,
-                "Node::ProcessVCFinalBlock not expected to be "
-                "called from non-LookUp node.");
+  if (!LOOKUP_NODE_MODE || !ARCHIVAL_LOOKUP || MULTIPLIER_SYNC_MODE) {
+    LOG_GENERAL(
+        WARNING,
+        "Node::ProcessVCFinalBlock not expected to be "
+        "called by other than seed node without multiplier syncing mode.");
     return false;
   }
   return ProcessVCFinalBlockCore(message, offset, from);
@@ -546,7 +547,6 @@ bool Node::ProcessVCFinalBlock(const bytes& message, unsigned int offset,
 bool Node::ProcessVCFinalBlockCore(const bytes& message, unsigned int offset,
                                    [[gnu::unused]] const Peer& from) {
   LOG_MARKER();
-
   uint64_t dsBlockNumber = 0;
   uint32_t consensusID = 0;
   TxBlock txBlock;
@@ -569,8 +569,20 @@ bool Node::ProcessVCFinalBlockCore(const bytes& message, unsigned int offset,
     }
   }
 
-  return ProcessFinalBlockCore(dsBlockNumber, consensusID, txBlock, stateDelta,
-                               message.size());
+  if (ProcessFinalBlockCore(dsBlockNumber, consensusID, txBlock, stateDelta,
+                            message.size())) {
+    if (LOOKUP_NODE_MODE && ARCHIVAL_LOOKUP && !MULTIPLIER_SYNC_MODE) {
+      {
+        unique_lock<mutex> lock(
+            m_mediator.m_lookup->m_mutexVCFinalBlockProcessed);
+        m_mediator.m_lookup->m_vcFinalBlockProcessed = true;
+      }
+      m_mediator.m_lookup->cv_vcFinalBlockProcessed.notify_all();
+    }
+    return true;
+  }
+
+  return false;
 }
 
 bool Node::ProcessFinalBlock(const bytes& message, unsigned int offset,
@@ -645,14 +657,6 @@ bool Node::ProcessFinalBlock(const bytes& message, unsigned int offset,
       }
       // Clear the vc blocks store
       m_vcBlockStore.clear();
-    }
-    if (LOOKUP_NODE_MODE && ARCHIVAL_LOOKUP && !MULTIPLIER_SYNC_MODE) {
-      {
-        unique_lock<mutex> lock(
-            m_mediator.m_lookup->m_mutexVCFinalBlockProcessed);
-        m_mediator.m_lookup->m_vcFinalBlockProcessed = true;
-      }
-      m_mediator.m_lookup->cv_vcFinalBlockProcessed.notify_all();
     }
     return true;
   }
