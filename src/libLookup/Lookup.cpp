@@ -3027,6 +3027,7 @@ void Lookup::CommitTxBlocks(const vector<TxBlock>& txBlocks) {
                     chrono::seconds(SEED_SYNC_SMALL_PULL_INTERVAL));
               }
             }
+            LOG_GENERAL(INFO, "Stopped the pull thread from l2l_data_provider");
           };
 
           DetachedFunction(1, func);  // main thread pulling data forever
@@ -5568,18 +5569,11 @@ void Lookup::FetchMbTxPendingTxMessageFromL2l(uint64_t blockNum) {
 
         // for each nonempty mb, send the request to l2l data provider
         auto txBlock = m_mediator.m_txBlockChain.GetBlock(blockNum);
-        LOG_GENERAL(INFO, "TxBlock " << blockNum << ": " << txBlock);
         const auto& microBlockInfos = txBlock.GetMicroBlockInfos();
-        LOG_GENERAL(INFO, "Num of microblocks for block "
-                              << blockNum << ": " << microBlockInfos.size());
 
         for (const auto& mb : mbs) {
-          LOG_GENERAL(INFO, "Checking for shard if of MB :" << mb.first);
           for (const auto& info : microBlockInfos) {
-            LOG_GENERAL(INFO, "mbinfo :" << info);
             if (info.m_microBlockHash == mb.first) {
-              LOG_GENERAL(INFO,
-                          "Sending for mb hash: " << info.m_microBlockHash);
               GetMBnForwardTxnFromL2lDataProvider(blockNum, info.m_shardId);
               break;
             }
