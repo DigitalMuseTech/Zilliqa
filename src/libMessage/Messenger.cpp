@@ -4591,7 +4591,7 @@ bool Messenger::GetNodeVCFinalBlock(const bytes& src, const unsigned int offset,
   result.ParseFromArray(src.data() + offset, src.size() - offset);
 
   if (!result.IsInitialized()) {
-    LOG_GENERAL(WARNING, "NodeFinalBlock initialization failed");
+    LOG_GENERAL(WARNING, "NodeVCFinalBlock initialization failed");
     return false;
   }
 

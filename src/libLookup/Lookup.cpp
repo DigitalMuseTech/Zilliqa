@@ -5567,8 +5567,9 @@ void Lookup::FetchMbTxPendingTxMessageFromL2l(uint64_t blockNum) {
                         << mbs.size());
 
         // for each nonempty mb, send the request to l2l data provider
-        const auto& microBlockInfos =
-            m_mediator.m_txBlockChain.GetBlock(blockNum).GetMicroBlockInfos();
+        auto txBlock = m_mediator.m_txBlockChain.GetBlock(blockNum);
+        LOG_GENERAL(INFO, "TxBlock " << blockNum << ": " << txBlock);
+        const auto& microBlockInfos = txBlock.GetMicroBlockInfos();
         LOG_GENERAL(INFO, "Num of microblocks for block "
                               << blockNum << ": " << microBlockInfos.size());
 
