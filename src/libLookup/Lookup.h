@@ -505,7 +505,7 @@ class Lookup : public Executable {
   // VCDSblock processed variables - used by seed nodes using PULL P1 option
   std::mutex m_mutexVCDSBlockProcessed;
   std::condition_variable cv_vcDsBlockProcessed;
-  bool m_vcDsBlockProcessed;
+  bool m_vcDsBlockProcessed = false;
 
   // VCFinalblock processed variables - used by seed nodes using PULL P1 option
   std::mutex m_mutexVCFinalBlockProcessed;
