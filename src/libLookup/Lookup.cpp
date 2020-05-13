@@ -5569,10 +5569,14 @@ void Lookup::FetchMbTxPendingTxMessageFromL2l(uint64_t blockNum) {
         // for each nonempty mb, send the request to l2l data provider
         const auto& microBlockInfos =
             m_mediator.m_txBlockChain.GetBlock(blockNum).GetMicroBlockInfos();
+        LOG_GENERAL(INFO, "Num of microblocks for block "
+                              << blockNum << ": " << microBlockInfos.size());
 
         for (const auto& mb : mbs) {
           for (const auto& info : microBlockInfos) {
             if (info.m_microBlockHash == mb.first) {
+              LOG_GENERAL(INFO,
+                          "Sending for mb hash: " << info.m_microBlockHash);
               GetMBnForwardTxnFromL2lDataProvider(blockNum, info.m_shardId);
               break;
             }
