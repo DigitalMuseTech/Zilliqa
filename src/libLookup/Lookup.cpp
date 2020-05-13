@@ -5573,7 +5573,9 @@ void Lookup::FetchMbTxPendingTxMessageFromL2l(uint64_t blockNum) {
                               << blockNum << ": " << microBlockInfos.size());
 
         for (const auto& mb : mbs) {
+          LOG_GENERAL(INFO, "Checking for shard if of MB :" << mb.first);
           for (const auto& info : microBlockInfos) {
+            LOG_GENERAL(INFO, "mbinfo :" << info);
             if (info.m_microBlockHash == mb.first) {
               LOG_GENERAL(INFO,
                           "Sending for mb hash: " << info.m_microBlockHash);
