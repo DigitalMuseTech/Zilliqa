@@ -698,6 +698,8 @@ class Node : public Executable {
 
   void RemoveIpMapping();
 
+  void CleanLocalRawStores();
+
  private:
   static std::map<NodeState, std::string> NodeStateStrings;
 

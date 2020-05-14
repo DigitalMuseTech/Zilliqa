@@ -3016,7 +3016,7 @@ void Lookup::CommitTxBlocks(const vector<TxBlock>& txBlocks) {
                   continue;
                 }
               }
-              if (!firstPull) {
+              if (!firstPull && !dsBlockReceived) {
                 // we take the liberty to have longer wait window because curr
                 // blk is just received.
                 this_thread::sleep_for(

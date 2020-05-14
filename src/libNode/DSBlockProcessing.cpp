@@ -730,6 +730,9 @@ bool Node::ProcessVCDSBlocksMessage(const bytes& message,
       std::lock_guard<mutex> g1(m_mutexVCDSBlockStore);
       m_vcDSBlockStore[dsblock.GetHeader().GetBlockNum()] = message2;
     }
+
+    // house keeping / clearing older entries from all in-memory stores.
+    CleanLocalRawStores();
   }
   if (LOOKUP_NODE_MODE && ARCHIVAL_LOOKUP && !MULTIPLIER_SYNC_MODE) {
     {

@@ -1377,11 +1377,13 @@ bool Node::ProcessPendingTxn(const bytes& message, unsigned int cur_offset,
   // Store to local map for PENDINGTXN
   // map -> key : epochnum value : map {key: shardid, value: vector<bytes>
   // pend_txns_message}
-  std::lock_guard<mutex> g1(m_mutexPendingTxnStore);
-  auto it = m_pendingTxnStore.find(epochNum);
-  if (it == m_pendingTxnStore.end() ||
-      (it->second.find(shardId) == it->second.end())) {
-    m_pendingTxnStore[epochNum][shardId] = message;
+  if (LOOKUP_NODE_MODE && ARCHIVAL_LOOKUP && MULTIPLIER_SYNC_MODE) {
+    std::lock_guard<mutex> g1(m_mutexPendingTxnStore);
+    auto it = m_pendingTxnStore.find(epochNum);
+    if (it == m_pendingTxnStore.end() ||
+        (it->second.find(shardId) == it->second.end())) {
+      m_pendingTxnStore[epochNum][shardId] = message;
+    }
   }
 
   AddPendingTxn(hashCodeMap, pubkey, shardId);
@@ -1423,7 +1425,7 @@ bool Node::ProcessMBnForwardTransactionCore(const MBnForwardedTxnEntry& entry) {
             mb_txns_message, MessageOffset::BODY, entry.m_microBlock,
             entry.m_transactions)) {
       LOG_GENERAL(WARNING, "Messenger::SetNodeMBnForwardTransaction failed.");
-    } else {
+    } else if (LOOKUP_NODE_MODE && ARCHIVAL_LOOKUP && MULTIPLIER_SYNC_MODE) {
       // Store to local map for MBNFORWARDTRANSACTION
       std::lock_guard<mutex> g1(m_mutexMBnForwardedTxnStore);
       m_mbnForwardedTxnStore[entry.m_microBlock.GetHeader().GetEpochNum()]

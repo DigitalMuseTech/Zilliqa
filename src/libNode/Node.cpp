@@ -2693,3 +2693,63 @@ void Node::GetEntireNetworkPeerInfo(VectorOfNode& peers,
 UnavailableMicroBlockList& Node::GetUnavailableMicroBlocks() {
   return m_unavailableMicroBlocks;
 }
+
+void Node::CleanLocalRawStores() {
+  LOG_MARKER();
+
+  uint64_t key_txepoch = m_mediator.m_currentEpochNum - NUM_FINAL_BLOCK_PER_POW;
+  uint64_t key_dsepoch =
+      m_mediator.m_dsBlockChain.GetLastBlock().GetHeader().GetBlockNum() - 1;
+
+  // Clear VCDSBlock message store
+  {
+    std::lock_guard<mutex> g1(m_mutexVCDSBlockStore);
+    for (auto iter = m_vcDSBlockStore.begin();
+         iter != m_vcDSBlockStore.end();) {
+      if (iter->first < key_dsepoch) {
+        iter = m_vcDSBlockStore.erase(iter);
+      } else {
+        ++iter;
+      }
+    }
+  }
+
+  // Clear VCFinalBlock message store
+  std::lock_guard<mutex> g1(m_mutexVCFinalBlockStore);
+  {
+    for (auto iter = m_vcFinalBlockStore.begin();
+         iter != m_vcFinalBlockStore.end();) {
+      if (iter->first < key_txepoch) {
+        iter = m_vcFinalBlockStore.erase(iter);
+      } else {
+        ++iter;
+      }
+    }
+  }
+
+  // Clear MBnForwardedTxn message store
+  {
+    std::lock_guard<mutex> g1(m_mutexMBnForwardedTxnStore);
+    for (auto iter = m_mbnForwardedTxnStore.begin();
+         iter != m_mbnForwardedTxnStore.end();) {
+      if (iter->first < key_txepoch) {
+        iter = m_mbnForwardedTxnStore.erase(iter);
+      } else {
+        ++iter;
+      }
+    }
+  }
+
+  // Clear PendingTxn message store
+  {
+    std::lock_guard<mutex> g1(m_mutexPendingTxnStore);
+    for (auto iter = m_pendingTxnStore.begin();
+         iter != m_pendingTxnStore.end();) {
+      if (iter->first < key_txepoch) {
+        iter = m_pendingTxnStore.erase(iter);
+      } else {
+        ++iter;
+      }
+    }
+  }
+}
