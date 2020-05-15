@@ -236,12 +236,18 @@ void Lookup::SetAboveLayer(VectorOfNode& aboveLayer, std::string xml_node) {
 
 bool Lookup::AddToWhitelistExchange(const PubKey& pubKey) {
   lock_guard<mutex> g(m_mutexExchangeWhitelisted);
-  return m_exchangeWhitelisted.emplace(pubKey).second;
+  if (m_exchangeWhitelisted.emplace(pubKey).second) {
+    return BlockStorage::GetBlockStorage().PutExchangePubKey(pubKey);
+  }
+  return false;
 }
 
 bool Lookup::RemoveFromWhitelistExchange(const PubKey& pubKey) {
   lock_guard<mutex> g(m_mutexExchangeWhitelisted);
-  return (m_exchangeWhitelisted.erase(pubKey) > 0);
+  if (m_exchangeWhitelisted.erase(pubKey) > 0) {
+    return BlockStorage::GetBlockStorage().DeleteExchangePubKey(pubKey);
+  }
+  return false;
 }
 
 VectorOfNode Lookup::GetSeedNodes() const {

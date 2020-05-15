@@ -107,6 +107,8 @@ class BlockStorage : public Singleton<BlockStorage> {
   std::shared_ptr<LevelDB> m_minerInfoDSCommDB;
   /// used for miner nodes (shards) retrieval
   std::shared_ptr<LevelDB> m_minerInfoShardsDB;
+  /// used for exchange pub key storage and retrieval
+  std::shared_ptr<LevelDB> m_exchangePubKeysDB;
 
   BlockStorage(const std::string& path = "", bool diagnostic = false)
       : m_metadataDB(std::make_shared<LevelDB>("metadata")),
@@ -133,6 +135,7 @@ class BlockStorage : public Singleton<BlockStorage> {
       m_txBodyTmpDB = std::make_shared<LevelDB>("txBodiesTmp");
       m_minerInfoDSCommDB = std::make_shared<LevelDB>("minerInfoDSComm");
       m_minerInfoShardsDB = std::make_shared<LevelDB>("minerInfoShards");
+      m_exchangePubKeysDB = std::make_shared<LevelDB>("exchangePubKeys");
     }
   };
   ~BlockStorage() = default;
@@ -160,6 +163,7 @@ class BlockStorage : public Singleton<BlockStorage> {
     PROCESSED_TEMP,
     MINER_INFO_DSCOMM,
     MINER_INFO_SHARDS,
+    EXCHANGE_PUBKEYS
   };
 
   /// Returns the singleton BlockStorage instance.
@@ -262,6 +266,15 @@ class BlockStorage : public Singleton<BlockStorage> {
 
   /// Retrieve all the blocklink
   bool GetAllBlockLink(std::list<BlockLink>& blocklinks);
+
+  /// Put exchange public key to storage
+  bool PutExchangePubKey(const PubKey& pubK);
+
+  /// Delete exchange public key from storage
+  bool DeleteExchangePubKey(const PubKey& pubK);
+
+  /// Retrieve all the exchange pubkeys
+  bool GetAllExchangePubKeys(std::unordered_set<PubKey>& pubKeys);
 
   /// Save Last Transactions Trie Root Hash
   bool PutMetadata(MetaType type, const bytes& data);
@@ -403,6 +416,7 @@ class BlockStorage : public Singleton<BlockStorage> {
   mutable std::shared_timed_mutex m_mutexProcessTx;
   mutable std::shared_timed_mutex m_mutexMinerInfoDSComm;
   mutable std::shared_timed_mutex m_mutexMinerInfoShards;
+  mutable std::shared_timed_mutex m_mutexExchangePubKeys;
 
   unsigned int m_diagnosticDBNodesCounter;
   unsigned int m_diagnosticDBCoinbaseCounter;

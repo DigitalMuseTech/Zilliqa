@@ -712,6 +712,10 @@ bool Node::StartRetrieveHistory(const SyncType syncType,
     m_mediator.m_lookup->FindMissingMBsForLastNTxBlks(
         LAST_N_TXBLKS_TOCHECK_FOR_MISSINGMBS);
     m_mediator.m_lookup->CheckAndFetchUnavailableMBs(false);
+
+    // Pull the exchange pubkeys to local store from persistence DB
+    BlockStorage::GetBlockStorage().GetAllExchangePubKeys(
+        m_mediator.m_lookup->m_exchangeWhitelisted);
   }
 
   if (/* new node not part of ds committee */ (SyncType::NEW_SYNC == syncType &&

@@ -593,6 +593,86 @@ bool BlockStorage::GetAllDSBlocks(std::list<DSBlockSharedPtr>& blocks) {
   return true;
 }
 
+bool BlockStorage::PutExchangePubKey(const PubKey& pubK) {
+  LOG_MARKER();
+
+  unique_lock<shared_timed_mutex> g(m_mutexExchangePubKeys);
+
+  string indexStr = "1";
+  int index;
+  leveldb::Iterator* it =
+      m_exchangePubKeysDB->GetDB()->NewIterator(leveldb::ReadOptions());
+  it->SeekToLast();
+  if (it->Valid()) {  // Empty storage right now
+    indexStr = it->key().ToString();
+    try {
+      index = stoull(indexStr);
+      indexStr = std::to_string(++index);
+    } catch (...) {
+      LOG_GENERAL(WARNING, "indexStr is not numeric");
+      return false;
+    }
+  }
+
+  bytes data;
+  pubK.Serialize(data, 0);
+  int ret = m_exchangePubKeysDB->Insert(indexStr, data);
+  return (ret == 0);
+}
+
+bool BlockStorage::DeleteExchangePubKey(const PubKey& pubK) {
+  LOG_MARKER();
+
+  unique_lock<shared_timed_mutex> g(m_mutexExchangePubKeys);
+
+  leveldb::Iterator* it =
+      m_exchangePubKeysDB->GetDB()->NewIterator(leveldb::ReadOptions());
+  bytes data;
+  pubK.Serialize(data, 0);
+  string pubKStrI = DataConversion::CharArrayToString(data);
+  for (it->SeekToFirst(); it->Valid(); it->Next()) {
+    string pubkString = it->value().ToString();
+    if (pubkString == pubKStrI) {
+      delete it;
+      LOG_GENERAL(INFO, "Deleted exchange pub key from DB successfully");
+      return true;
+    }
+  }
+  return false;
+}
+
+bool BlockStorage::GetAllExchangePubKeys(unordered_set<PubKey>& pubKeys) {
+  LOG_MARKER();
+
+  shared_lock<shared_timed_mutex> g(m_mutexExchangePubKeys);
+
+  leveldb::Iterator* it =
+      m_exchangePubKeysDB->GetDB()->NewIterator(leveldb::ReadOptions());
+  uint64_t count = 0;
+  for (it->SeekToFirst(); it->Valid(); it->Next()) {
+    string pns = it->key().ToString();
+    string pubkString = it->value().ToString();
+    if (pubkString.empty()) {
+      LOG_GENERAL(WARNING, "Lost one exchange public key in the DB");
+      delete it;
+      return false;
+    }
+    PubKey pubK(bytes(pubkString.begin(), pubkString.end()), 0);
+    pubKeys.emplace(pubK);
+    count++;
+  }
+  LOG_GENERAL(INFO, "Retrieved " << count << " PubKeys");
+
+  delete it;
+
+  if (pubKeys.empty()) {
+    LOG_GENERAL(INFO, "Disk has no Exchange PubKeys");
+    return false;
+  }
+
+  return true;
+}
+
 bool BlockStorage::GetAllTxBlocks(std::deque<TxBlockSharedPtr>& blocks) {
   LOG_MARKER();
 
@@ -1437,6 +1517,11 @@ bool BlockStorage::ResetDB(DBTYPE type) {
       ret = m_minerInfoShardsDB->ResetDB();
       break;
     }
+    case EXCHANGE_PUBKEYS: {
+      unique_lock<shared_timed_mutex> g(m_mutexExchangePubKeys);
+      ret = m_exchangePubKeysDB->ResetDB();
+      break;
+    }
   }
   if (!ret) {
     LOG_GENERAL(INFO, "FAIL: Reset DB " << type << " failed");
@@ -1549,6 +1634,11 @@ bool BlockStorage::RefreshDB(DBTYPE type) {
       ret = m_minerInfoShardsDB->RefreshDB();
       break;
     }
+    case EXCHANGE_PUBKEYS: {
+      unique_lock<shared_timed_mutex> g(m_mutexExchangePubKeys);
+      ret = m_exchangePubKeysDB->RefreshDB();
+      break;
+    }
   }
   if (!ret) {
     LOG_GENERAL(INFO, "FAIL: Refresh DB " << type << " failed");
@@ -1654,6 +1744,11 @@ std::vector<std::string> BlockStorage::GetDBName(DBTYPE type) {
       ret.push_back(m_minerInfoShardsDB->GetDBName());
       break;
     }
+    case EXCHANGE_PUBKEYS: {
+      shared_lock<shared_timed_mutex> g(m_mutexExchangePubKeys);
+      ret.push_back(m_exchangePubKeysDB->GetDBName());
+      break;
+    }
   }
 
   return ret;
@@ -1678,7 +1773,8 @@ bool BlockStorage::ResetAll() {
            ResetDB(STATE_DELTA) & ResetDB(TEMP_STATE) &
            ResetDB(DIAGNOSTIC_NODES) & ResetDB(DIAGNOSTIC_COINBASE) &
            ResetDB(STATE_ROOT) & ResetDB(PROCESSED_TEMP) &
-           ResetDB(MINER_INFO_DSCOMM) & ResetDB(MINER_INFO_SHARDS);
+           ResetDB(MINER_INFO_DSCOMM) & ResetDB(MINER_INFO_SHARDS) &
+           ResetDB(EXCHANGE_PUBKEYS);
   }
 }
 
@@ -1704,6 +1800,7 @@ bool BlockStorage::RefreshAll() {
            RefreshDB(DIAGNOSTIC_NODES) & RefreshDB(DIAGNOSTIC_COINBASE) &
            RefreshDB(STATE_ROOT) & RefreshDB(PROCESSED_TEMP) &
            RefreshDB(MINER_INFO_DSCOMM) & RefreshDB(MINER_INFO_SHARDS) &
+           RefreshDB(EXCHANGE_PUBKEYS) &
            Contract::ContractStorage2::GetContractStorage().RefreshAll();
   }
 }
