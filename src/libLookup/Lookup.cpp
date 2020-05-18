@@ -1342,16 +1342,24 @@ bool Lookup::ProcessGetMBnForwardTxnFromL2l(const bytes& message,
   }
 
   // check the raw store if requested mbtxns message exist
-  {
-    std::lock_guard<mutex> g1(m_mediator.m_node->m_mutexMBnForwardedTxnStore);
-    auto it = m_mediator.m_node->m_mbnForwardedTxnStore.find(blockNum);
-    if (it != m_mediator.m_node->m_mbnForwardedTxnStore.end()) {
-      auto it2 = it->second.find(shardId);
-      if (it2 != it->second.end()) {
-        LOG_GENERAL(INFO, requestorPeer);
-        P2PComm::GetInstance().SendMessage(requestorPeer, it2->second);
+  int retryCount = MAX_FETCH_BLOCK_RETRIES;
+
+  while (retryCount-- > 0) {
+    {
+      std::lock_guard<mutex> g1(m_mediator.m_node->m_mutexMBnForwardedTxnStore);
+      auto it = m_mediator.m_node->m_mbnForwardedTxnStore.find(blockNum);
+      if (it != m_mediator.m_node->m_mbnForwardedTxnStore.end()) {
+        auto it2 = it->second.find(shardId);
+        if (it2 != it->second.end()) {
+          LOG_GENERAL(INFO, requestorPeer);
+          P2PComm::GetInstance().SendMessage(requestorPeer, it2->second);
+          return true;
+        }
+      } else {
+        LOG_GENERAL(WARNING, "Failed to fetch mbtxns message, retry... ");
       }
     }
+    this_thread::sleep_for(chrono::seconds(2));
   }
 
   return true;
@@ -1401,16 +1409,22 @@ bool Lookup::ProcessGetPendingTxnFromL2l(const bytes& message,
   }
 
   // check the raw store if requested pendingtxns message exist
-  {
-    std::lock_guard<mutex> g1(m_mediator.m_node->m_mutexPendingTxnStore);
-    auto it = m_mediator.m_node->m_pendingTxnStore.find(blockNum);
-    if (it != m_mediator.m_node->m_pendingTxnStore.end()) {
-      auto it2 = it->second.find(shardId);
-      if (it2 != it->second.end()) {
-        LOG_GENERAL(INFO, requestorPeer);
-        P2PComm::GetInstance().SendMessage(requestorPeer, it2->second);
+  int retryCount = MAX_FETCH_BLOCK_RETRIES;
+  while (retryCount-- > 0) {
+    {
+      std::lock_guard<mutex> g1(m_mediator.m_node->m_mutexPendingTxnStore);
+      auto it = m_mediator.m_node->m_pendingTxnStore.find(blockNum);
+      if (it != m_mediator.m_node->m_pendingTxnStore.end()) {
+        auto it2 = it->second.find(shardId);
+        if (it2 != it->second.end()) {
+          LOG_GENERAL(INFO, requestorPeer);
+          P2PComm::GetInstance().SendMessage(requestorPeer, it2->second);
+        }
+      } else {
+        LOG_GENERAL(WARNING, "Failed to fetch pendingtxn message, retry... ");
       }
     }
+    this_thread::sleep_for(chrono::seconds(2));
   }
 
   return true;
