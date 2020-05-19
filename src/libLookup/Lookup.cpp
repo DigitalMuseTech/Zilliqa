@@ -1272,7 +1272,7 @@ bool Lookup::ProcessGetVCFinalBlockFromL2l(const bytes& message,
     std::lock_guard<mutex> g1(m_mediator.m_node->m_mutexVCFinalBlock);
     auto it = m_mediator.m_node->m_vcFinalBlockStore.find(blockNum);
     if (it != m_mediator.m_node->m_vcFinalBlockStore.end()) {
-      LOG_GENERAL(INFO, requestorPeer);
+      LOG_GENERAL(INFO, "Sending VCFinalBlock msg to " << requestorPeer);
       P2PComm::GetInstance().SendMessage(requestorPeer, it->second);
     }
   }
