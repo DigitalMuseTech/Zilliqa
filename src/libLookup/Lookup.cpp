@@ -1113,38 +1113,21 @@ void Lookup::SendMessageToRandomL2lDataProvider(const bytes& message) const {
     return;
   }
 
-  VectorOfPeer notBlackListedL2lDataProviders;
-  {
-    lock_guard<mutex> lock(m_mutexL2lDataProviders);
-    if (0 == m_l2lDataProviders.size()) {
-      LOG_GENERAL(WARNING, "l2l data providers are empty");
-      return;
-    }
-
-    for (const auto& node : m_l2lDataProviders) {
-      auto l2lIpToSend = TryGettingResolvedIP(node.second);
-      if (!Blacklist::GetInstance().Exist(l2lIpToSend) &&
-          (m_mediator.m_selfPeer.GetIpAddress() != l2lIpToSend)) {
-        notBlackListedL2lDataProviders.push_back(
-            Peer(l2lIpToSend, node.second.GetListenPortHost()));
-      }
-    }
-  }
-
-  if (notBlackListedL2lDataProviders.empty()) {
-    LOG_GENERAL(WARNING,
-                "All the l2l data provider nodes are blacklisted, please check "
-                "you network "
-                "connection.");
+  lock_guard<mutex> lock(m_mutexL2lDataProviders);
+  if (0 == m_l2lDataProviders.size()) {
+    LOG_GENERAL(WARNING, "l2l data providers are empty");
     return;
   }
 
-  auto index =
-      RandomGenerator::GetRandomInt(notBlackListedL2lDataProviders.size());
-  LOG_GENERAL(INFO, "Sending message to l2l : "
-                        << notBlackListedL2lDataProviders[index]);
-  P2PComm::GetInstance().SendMessage(notBlackListedL2lDataProviders[index],
-                                     message);
+  int index = RandomGenerator::GetRandomInt(m_l2lDataProviders.size());
+  auto resolved_ip = TryGettingResolvedIP(m_l2lDataProviders[index].second);
+
+  Blacklist::GetInstance().Whitelist(
+      resolved_ip);  // exclude this l2lookup ip from blacklisting
+  Peer tmpPeer(resolved_ip,
+               m_l2lDataProviders[index].second.GetListenPortHost());
+  LOG_GENERAL(INFO, "Sending message to l2l: " << tmpPeer);
+  P2PComm::GetInstance().SendMessage(tmpPeer, message);
 }
 
 void Lookup::SendMessageToRandomSeedNode(const bytes& message) const {
@@ -1351,7 +1334,7 @@ bool Lookup::ProcessGetMBnForwardTxnFromL2l(const bytes& message,
       if (it != m_mediator.m_node->m_mbnForwardedTxnStore.end()) {
         auto it2 = it->second.find(shardId);
         if (it2 != it->second.end()) {
-          LOG_GENERAL(INFO, requestorPeer);
+          LOG_GENERAL(INFO, "Sending MbnForrwardTxn msg to " << requestorPeer);
           P2PComm::GetInstance().SendMessage(requestorPeer, it2->second);
           return true;
         }
@@ -1402,7 +1385,7 @@ bool Lookup::ProcessGetPendingTxnFromL2l(const bytes& message,
     return false;
   }
 
-  // check is=f requestor's pubkey is from whitelisted exchange pub keys.
+  // check if requestor's pubkey is from whitelisted exchange pub keys.
   if (!IsWhitelistedExchange(senderPubKey)) {
     LOG_GENERAL(WARNING, "Requestor's exchange pubkey is not whitelisted!");
     return false;
@@ -1417,15 +1400,15 @@ bool Lookup::ProcessGetPendingTxnFromL2l(const bytes& message,
       if (it != m_mediator.m_node->m_pendingTxnStore.end()) {
         auto it2 = it->second.find(shardId);
         if (it2 != it->second.end()) {
-          LOG_GENERAL(INFO, requestorPeer);
+          LOG_GENERAL(INFO, "Sending pending txns to " << requestorPeer);
           P2PComm::GetInstance().SendMessage(requestorPeer, it2->second);
+          return true;
         }
-      } else {
-        LOG_GENERAL(WARNING, "Failed to fetch pendingtxn message, retry... ");
       }
     }
     this_thread::sleep_for(chrono::seconds(2));
   }
+  LOG_GENERAL(INFO, "No pendingtxns!");
 
   return true;
 }
