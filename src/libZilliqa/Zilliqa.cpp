@@ -135,7 +135,7 @@ Zilliqa::Zilliqa(const PairOfKey& key, const Peer& peer, SyncType syncType,
                  PairOfKey exchKey)
     : m_mediator(key, peer),
       m_ds(m_mediator),
-      m_lookup(m_mediator, syncType, multiplierSyncMode, exchKey),
+      m_lookup(m_mediator, syncType, multiplierSyncMode, std::move(exchKey)),
       m_n(m_mediator, syncType, toRetrieveHistory),
       m_msgQueue(MSGQUEUE_SIZE)
 

@@ -223,7 +223,7 @@ int main(int argc, const char* argv[]) {
 
     Zilliqa zilliqa(make_pair(privkey, pubkey), my_network_info,
                     (SyncType)syncType, vm.count("recovery"),
-                    vm.count("l2lsyncmode") > 0 ? false : true,
+                    vm.count("l2lsyncmode") <= 0,
                     make_pair(exchPrivKey, exchPubKey));
     auto dispatcher = [&zilliqa](pair<bytes, Peer>* message) mutable -> void {
       zilliqa.Dispatch(message);

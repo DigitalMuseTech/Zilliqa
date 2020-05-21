@@ -526,7 +526,7 @@ class Messenger {
   static bool SetLookupGetVCFinalBlockFromL2l(bytes& dst,
                                               const unsigned int offset,
                                               const uint64_t& blockNum,
-                                              const Peer& from,
+                                              const Peer& sender,
                                               const PairOfKey& seedKey);
   static bool GetLookupGetVCFinalBlockFromL2l(const bytes& src,
                                               const unsigned int offset,
@@ -534,7 +534,7 @@ class Messenger {
                                               PubKey& senderPubKey);
   static bool SetLookupGetDSBlockFromL2l(bytes& dst, const unsigned int offset,
                                          const uint64_t& blockNum,
-                                         const Peer& from,
+                                         const Peer& sender,
                                          const PairOfKey& seedKey);
   static bool GetLookupGetDSBlockFromL2l(const bytes& src,
                                          const unsigned int offset,
@@ -542,7 +542,7 @@ class Messenger {
                                          PubKey& senderPubKey);
   static bool SetLookupGetMBnForwardTxnFromL2l(
       bytes& dst, const unsigned int offset, const uint64_t& blockNum,
-      const uint32_t& shardId, const Peer& from, const PairOfKey& seedKey);
+      const uint32_t& shardId, const Peer& sender, const PairOfKey& seedKey);
   static bool GetLookupGetMBnForwardTxnFromL2l(const bytes& src,
                                                const unsigned int offset,
                                                uint64_t& blockNum,
@@ -550,7 +550,7 @@ class Messenger {
                                                PubKey& senderPubKey);
   static bool SetLookupGetPendingTxnFromL2l(
       bytes& dst, const unsigned int offset, const uint64_t& blockNum,
-      const uint32_t& shardId, const Peer& from, const PairOfKey& seedKey);
+      const uint32_t& shardId, const Peer& sender, const PairOfKey& seedKey);
   static bool GetLookupGetPendingTxnFromL2l(const bytes& src,
                                             const unsigned int offset,
                                             uint64_t& blockNum,

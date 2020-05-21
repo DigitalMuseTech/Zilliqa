@@ -86,7 +86,7 @@ Lookup::Lookup(Mediator& mediator, SyncType syncType, bool multiplierSyncMode,
   m_sendSCCallsToDS = false;
 
   if (LOOKUP_NODE_MODE && ARCHIVAL_LOOKUP && !MULTIPLIER_SYNC_MODE) {
-    m_exchKey = exchKey;
+    m_exchKey = std::move(exchKey);
   }
 }
 
@@ -208,7 +208,7 @@ void Lookup::SetLookupNodes() {
   m_lookupNodesStatic = m_lookupNodes;
 }
 
-void Lookup::SetAboveLayer(VectorOfNode& aboveLayer, std::string xml_node) {
+void Lookup::SetAboveLayer(VectorOfNode& aboveLayer, string xml_node) {
   using boost::property_tree::ptree;
   ptree pt;
   read_xml("constants.xml", pt);
@@ -1165,11 +1165,7 @@ void Lookup::SendMessageToRandomSeedNode(const bytes& message) const {
 
 bool Lookup::IsWhitelistedExchange(const PubKey& pubKey) {
   lock_guard<mutex> g(m_mutexExchangeWhitelisted);
-  auto it = m_exchangeWhitelisted.find(pubKey);
-  if (it != m_exchangeWhitelisted.end()) {
-    return true;
-  }
-  return false;
+  return m_exchangeWhitelisted.end() != m_exchangeWhitelisted.find(pubKey);
 }
 
 bool Lookup::ProcessGetDSBlockFromL2l(const bytes& message, unsigned int offset,
