@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <algorithm>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -598,25 +599,28 @@ bool BlockStorage::PutExchangePubKey(const PubKey& pubK) {
 
   unique_lock<shared_timed_mutex> g(m_mutexExchangePubKeys);
 
-  string indexStr = "1";
-  int index;
+  string keyStr = "0000000001";
+  uint32_t key;
   leveldb::Iterator* it =
       m_exchangePubKeysDB->GetDB()->NewIterator(leveldb::ReadOptions());
   it->SeekToLast();
   if (it->Valid()) {  // Empty storage right now
-    indexStr = it->key().ToString();
+    keyStr = it->key().ToString();
     try {
-      index = stoull(indexStr);
-      indexStr = std::to_string(++index);
+      key = stoull(keyStr);
+      std::stringstream ss;
+      ss << std::setw(10) << std::setfill('0') << ++key;
+      keyStr = ss.str();
     } catch (...) {
-      LOG_GENERAL(WARNING, "indexStr is not numeric");
+      LOG_GENERAL(WARNING, "key is not numeric");
       return false;
     }
   }
 
   bytes data;
   pubK.Serialize(data, 0);
-  int ret = m_exchangePubKeysDB->Insert(indexStr, data);
+  LOG_GENERAL(INFO, "Inserting with key:" << keyStr << ", Pubkey: " << pubK);
+  int ret = m_exchangePubKeysDB->Insert(keyStr, data);
   return (ret == 0);
 }
 
@@ -631,11 +635,14 @@ bool BlockStorage::DeleteExchangePubKey(const PubKey& pubK) {
   pubK.Serialize(data, 0);
   string pubKStrI = DataConversion::CharArrayToString(data);
   for (it->SeekToFirst(); it->Valid(); it->Next()) {
+    string pns = it->key().ToString();
     string pubkString = it->value().ToString();
     if (pubkString == pubKStrI) {
-      delete it;
-      LOG_GENERAL(INFO, "Deleted exchange pub key from DB successfully");
-      return true;
+      if (0 == m_exchangePubKeysDB->DeleteKey(pns)) {
+        LOG_GENERAL(INFO, "Deleted exchange pubkey "
+                              << pubK << " from DB successfully");
+        return true;
+      }
     }
   }
   return false;
@@ -650,7 +657,6 @@ bool BlockStorage::GetAllExchangePubKeys(unordered_set<PubKey>& pubKeys) {
       m_exchangePubKeysDB->GetDB()->NewIterator(leveldb::ReadOptions());
   uint64_t count = 0;
   for (it->SeekToFirst(); it->Valid(); it->Next()) {
-    string pns = it->key().ToString();
     string pubkString = it->value().ToString();
     if (pubkString.empty()) {
       LOG_GENERAL(WARNING, "Lost one exchange public key in the DB");
