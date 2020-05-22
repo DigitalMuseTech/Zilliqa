@@ -105,7 +105,7 @@ class Lookup : public Executable {
   /// To indicate which type of synchronization is using
   std::atomic<SyncType> m_syncType{};  // = SyncType::NO_SYNC;
 
-  void SetAboveLayer(VectorOfNode& aboveLayer, std::string xml_node);
+  void SetAboveLayer(VectorOfNode& aboveLayer, const std::string& xml_node);
 
   /// Post processing after the lookup node successfully synchronized with the
   /// network

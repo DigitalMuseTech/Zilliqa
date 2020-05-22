@@ -208,7 +208,7 @@ void Lookup::SetLookupNodes() {
   m_lookupNodesStatic = m_lookupNodes;
 }
 
-void Lookup::SetAboveLayer(VectorOfNode& aboveLayer, string xml_node) {
+void Lookup::SetAboveLayer(VectorOfNode& aboveLayer, const string& xml_node) {
   using boost::property_tree::ptree;
   ptree pt;
   read_xml("constants.xml", pt);
