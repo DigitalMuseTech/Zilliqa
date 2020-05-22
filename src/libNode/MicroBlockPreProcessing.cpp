@@ -319,6 +319,7 @@ void Node::ProcessTransactionWhenShardLeader(
   m_txnFees = 0;
 
   vector<Transaction> gasLimitExceededTxnBuffer;
+  vector<pair<TxnHash, PoolTxnStatus>> droppedTxns;
 
   AccountStore::GetInstance().CleanStorageRootUpdateBufferTemp();
 
@@ -342,8 +343,8 @@ void Node::ProcessTransactionWhenShardLeader(
         gasLimitExceededTxnBuffer.emplace_back(t);
         continue;
       }
-
-      if (m_mediator.m_validator->CheckCreatedTransaction(t, tr)) {
+      PoolTxnStatus error_code;
+      if (m_mediator.m_validator->CheckCreatedTransaction(t, tr, error_code)) {
         if (!SafeMath<uint64_t>::add(m_gasUsedTotal, tr.GetCumGas(),
                                      m_gasUsedTotal)) {
           LOG_GENERAL(WARNING, "m_gasUsedTotal addition unsafe!");
@@ -362,6 +363,8 @@ void Node::ProcessTransactionWhenShardLeader(
         appendOne(t, tr);
 
         continue;
+      } else {
+        droppedTxns.emplace_back(t.GetTranID(), error_code);
       }
     }
     // if no txn in u_map meet right nonce process new come-in transactions
@@ -409,7 +412,9 @@ void Node::ProcessTransactionWhenShardLeader(
           gasLimitExceededTxnBuffer.emplace_back(t);
           continue;
         }
-        if (m_mediator.m_validator->CheckCreatedTransaction(t, tr)) {
+        PoolTxnStatus error_code;
+        if (m_mediator.m_validator->CheckCreatedTransaction(t, tr,
+                                                            error_code)) {
           if (!SafeMath<uint64_t>::add(m_gasUsedTotal, tr.GetCumGas(),
                                        m_gasUsedTotal)) {
             LOG_GENERAL(WARNING, "m_gasUsedTotal addition unsafe!");
@@ -426,6 +431,8 @@ void Node::ProcessTransactionWhenShardLeader(
             break;
           }
           appendOne(t, tr);
+        } else {
+          droppedTxns.emplace_back(t.GetTranID(), error_code);
         }
       }
     } else {
@@ -442,7 +449,7 @@ void Node::ProcessTransactionWhenShardLeader(
     SaveTxnsToS3(t_processedTransactions);
   }
   // Put txns in map back into pool
-  ReinstateMemPool(t_addrNonceTxnMap, gasLimitExceededTxnBuffer);
+  ReinstateMemPool(t_addrNonceTxnMap, gasLimitExceededTxnBuffer, droppedTxns);
 }
 
 bool Node::VerifyTxnsOrdering(const vector<TxnHash>& tranHashes,
@@ -567,6 +574,7 @@ void Node::ProcessTransactionWhenShardBackup(
   m_txnFees = 0;
 
   vector<Transaction> gasLimitExceededTxnBuffer;
+  vector<pair<TxnHash, PoolTxnStatus>> droppedTxns;
 
   AccountStore::GetInstance().CleanStorageRootUpdateBufferTemp();
 
@@ -590,8 +598,8 @@ void Node::ProcessTransactionWhenShardBackup(
         gasLimitExceededTxnBuffer.emplace_back(t);
         continue;
       }
-
-      if (m_mediator.m_validator->CheckCreatedTransaction(t, tr)) {
+      PoolTxnStatus error_code;
+      if (m_mediator.m_validator->CheckCreatedTransaction(t, tr, error_code)) {
         if (!SafeMath<uint64_t>::add(m_gasUsedTotal, tr.GetCumGas(),
                                      m_gasUsedTotal)) {
           LOG_GENERAL(WARNING, "m_gasUsedTotal addition unsafe!");
@@ -610,6 +618,11 @@ void Node::ProcessTransactionWhenShardBackup(
         appendOne(t, tr);
         continue;
       }
+
+      else {
+        droppedTxns.emplace_back(t.GetTranID(), error_code);
+      }
+
     }
     // if no txn in u_map meet right nonce process new come-in transactions
     else if (t_createdTxns.findOne(t)) {
@@ -642,8 +655,9 @@ void Node::ProcessTransactionWhenShardBackup(
           gasLimitExceededTxnBuffer.emplace_back(t);
           continue;
         }
-
-        if (m_mediator.m_validator->CheckCreatedTransaction(t, tr)) {
+        PoolTxnStatus error_code;
+        if (m_mediator.m_validator->CheckCreatedTransaction(t, tr,
+                                                            error_code)) {
           if (!SafeMath<uint64_t>::add(m_gasUsedTotal, tr.GetCumGas(),
                                        m_gasUsedTotal)) {
             LOG_GENERAL(WARNING, "m_gasUsedTotal addition overflow!");
@@ -660,6 +674,8 @@ void Node::ProcessTransactionWhenShardBackup(
             break;
           }
           appendOne(t, tr);
+        } else {
+          droppedTxns.emplace_back(t.GetTranID(), error_code);
         }
       }
     } else {
@@ -674,7 +690,7 @@ void Node::ProcessTransactionWhenShardBackup(
 
   PutTxnsInTempDataBase(t_processedTransactions);
 
-  ReinstateMemPool(t_addrNonceTxnMap, gasLimitExceededTxnBuffer);
+  ReinstateMemPool(t_addrNonceTxnMap, gasLimitExceededTxnBuffer, droppedTxns);
 }
 
 void Node::PutTxnsInTempDataBase(
@@ -736,7 +752,8 @@ std::string Node::GetAwsS3CpString(const std::string& uploadFilePath) {
 
 void Node::ReinstateMemPool(
     const map<Address, map<uint64_t, Transaction>>& addrNonceTxnMap,
-    const vector<Transaction>& gasLimitExceededTxnBuffer) {
+    const vector<Transaction>& gasLimitExceededTxnBuffer,
+    const vector<pair<TxnHash, PoolTxnStatus>>& droppedTxns) {
   unique_lock<shared_timed_mutex> g(m_unconfirmedTxnsMutex);
 
   // Put remaining txns back in pool
@@ -753,6 +770,10 @@ void Node::ReinstateMemPool(
     LOG_GENERAL(INFO, "PendingAPI " << t.GetTranID());
     m_unconfirmedTxns.emplace(t.GetTranID(),
                               PoolTxnStatus::PRESENT_GAS_EXCEEDED);
+  }
+
+  for (const auto& txnHashStatus : droppedTxns) {
+    m_unconfirmedTxns.emplace(txnHashStatus);
   }
 }
 
