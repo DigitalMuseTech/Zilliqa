@@ -716,9 +716,6 @@ bool Node::ProcessFinalBlockCore(uint64_t& dsBlockNumber,
                        << txBlock.GetHeader().GetBlockNum() << "] FRST");
 
   if (LOOKUP_NODE_MODE && LOG_PARAMETERS) {
-    LOG_STATE("[FBSIZE] Size: " << messageSize << " BlockNum: "
-                                << txBlock.GetHeader().GetBlockNum());
-
     uint64_t timeDiff = txBlock.GetTimestamp() -
                         m_mediator.m_txBlockChain.GetLastBlock().GetTimestamp();
 
@@ -726,12 +723,12 @@ bool Node::ProcessFinalBlockCore(uint64_t& dsBlockNumber,
 
     cpp_dec_float_50 td_float(timeDiff);
     cpp_dec_float_50 numTxns(txBlock.GetHeader().GetNumTxs());
-    td_float = td_float / oneMillion;
+    td_float = td_float / 1000;
 
-    LOG_STATE("[FBTIME] " << td_float);
-    LOG_STATE("[FBTPS] " << numTxns / timeDiff);
-
-    LOG_STATE("[FBGAS] " << txBlock.GetHeader().GetGasUsed());
+    LOG_STATE("[FBSTAT][" << m_mediator.m_currentEpochNum
+                          << "] Size=" << messageSize << " Time=" << td_float
+                          << " TPS=" << numTxns * oneMillion / timeDiff
+                          << " Gas=" << txBlock.GetHeader().GetGasUsed())
   }
 
   // Verify the co-signature
@@ -813,9 +810,15 @@ bool Node::ProcessFinalBlockCore(uint64_t& dsBlockNumber,
     }
   }
 
-  LOG_STATE("[FLBLK][" << setw(15) << left
-                       << m_mediator.m_selfPeer.GetPrintableIPAddress() << "]["
-                       << m_mediator.m_currentEpochNum << "] RECVD FLBLK");
+  if (LOG_PARAMETERS) {
+    LOG_STATE("[FLBLKRECV][" << m_mediator.m_currentEpochNum
+                             << "] Shard=" << m_myshardId);
+  } else {
+    LOG_STATE("[FLBLK][" << setw(15) << left
+                         << m_mediator.m_selfPeer.GetPrintableIPAddress()
+                         << "][" << m_mediator.m_currentEpochNum
+                         << "] RECVD FLBLK");
+  }
 
   bool toSendTxnToLookup = false;
 
@@ -1109,7 +1112,7 @@ void Node::CommitForwardedTransactions(const MBnForwardedTxnEntry& entry) {
 
     // feed the event log holder
     if (ENABLE_WEBSOCKET) {
-      WebsocketServer::GetInstance().ParseTxnEventLog(twr);
+      WebsocketServer::GetInstance().ParseTxn(twr);
     }
 
     // Store TxBody to disk
@@ -1250,8 +1253,9 @@ bool Node::ProcessMBnForwardTransaction(const bytes& message,
   if (LOOKUP_NODE_MODE && LOG_PARAMETERS) {
     LOG_STATE("[MBPCKT] Size:"
               << message.size()
-              << " epoch: " << entry.m_microBlock.GetHeader().GetEpochNum()
-              << " shard:" << entry.m_microBlock.GetHeader().GetShardId());
+              << " Epoch:" << entry.m_microBlock.GetHeader().GetEpochNum()
+              << " Shard:" << entry.m_microBlock.GetHeader().GetShardId()
+              << " Txns:" << entry.m_microBlock.GetHeader().GetNumTxs());
   }
 
   if ((m_mediator.m_txBlockChain.GetLastBlock().GetHeader().GetBlockNum() <
