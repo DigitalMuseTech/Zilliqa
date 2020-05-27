@@ -1226,6 +1226,9 @@ bool Lookup::ProcessGetDSBlockFromL2l(const bytes& message, unsigned int offset,
           m_mediator.m_dsBlockChain.GetLastBlock().GetHeader().GetBlockNum();
       if (blockNum <= latestDSBlkNum) {
         blockNum = latestDSBlkNum;
+      }
+      if (m_mediator.m_node->m_vcDSBlockStore.find(blockNum) ==
+          m_mediator.m_node->m_vcDSBlockStore.end()) {
         ComposeAndStoreVCDSBlockMessage(blockNum);
       } else {
         // Have not received DS Block yet.
@@ -1300,12 +1303,12 @@ bool Lookup::ProcessGetVCFinalBlockFromL2l(const bytes& message,
         uint64_t lowestLimitNum =
             m_mediator.m_dsBlockChain.GetLastBlock().GetHeader().GetEpochNum();
         if (blockNum < lowestLimitNum) {  // requested from older ds epoch
-          blockNum = lowestLimitNum;
-          if (m_mediator.m_node->m_vcFinalBlockStore.find(lowestLimitNum) ==
-              m_mediator.m_node->m_vcFinalBlockStore
-                  .end()) {  // if latest one not found in store as well
-            ComposeAndStoreVCFinalBlockMessage(blockNum);
-          }
+          blockNum = m_mediator.m_currentEpochNum - 1;
+        }
+        if (m_mediator.m_node->m_vcFinalBlockStore.find(blockNum) ==
+            m_mediator.m_node->m_vcFinalBlockStore
+                .end()) {  // if latest one not found in store as well
+          ComposeAndStoreVCFinalBlockMessage(blockNum);
         }
       } else {
         // Have not received FB yet.
