@@ -444,6 +444,15 @@ class Lookup : public Executable {
   inline SyncType GetSyncType() const { return m_syncType.load(); }
   void SetSyncType(SyncType syncType);
 
+  // Create MBnForwardTxn raw message for older txblk if not available in store.
+  bool ComposeAndStoreMBnForwardTxnMessage(const uint64_t& blockNum);
+
+  // Create VCFinal raw message for older txblk if not available in store.
+  bool ComposeAndStoreVCFinalBlockMessage(const uint64_t& blockNum);
+
+  // Create VCDS Block raw message for older txblk if not available in store.
+  bool ComposeAndStoreVCDSBlockMessage(const uint64_t& blockNum);
+
   // Reset certain variables to the initial state
   bool CleanVariables();
 
@@ -511,6 +520,9 @@ class Lookup : public Executable {
   std::mutex m_mutexVCFinalBlockProcessed;
   std::condition_variable cv_vcFinalBlockProcessed;
   bool m_vcFinalBlockProcessed = false;
+
+  // exit trigger
+  std::atomic<bool> m_exitPullThread{};
 };
 
 #endif  // ZILLIQA_SRC_LIBLOOKUP_LOOKUP_H_

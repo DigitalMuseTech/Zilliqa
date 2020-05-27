@@ -712,6 +712,38 @@ bool BlockStorage::GetAllTxBlocks(std::deque<TxBlockSharedPtr>& blocks) {
   return true;
 }
 
+bool BlockStorage::GetAllVCBlocks(std::list<VCBlockSharedPtr>& blocks) {
+  LOG_MARKER();
+
+  shared_lock<shared_timed_mutex> g(m_mutexVCBlock);
+
+  leveldb::Iterator* it =
+      m_VCBlockDB->GetDB()->NewIterator(leveldb::ReadOptions());
+  uint64_t count = 0;
+  for (it->SeekToFirst(); it->Valid(); it->Next()) {
+    string bns = it->key().ToString();
+    string blockString = it->value().ToString();
+    if (blockString.empty()) {
+      LOG_GENERAL(WARNING, "Lost one block in the chain");
+      delete it;
+      return false;
+    }
+    VCBlockSharedPtr block = VCBlockSharedPtr(
+        new VCBlock(bytes(blockString.begin(), blockString.end()), 0));
+    blocks.emplace_back(block);
+    count++;
+  }
+  LOG_GENERAL(INFO, "Retrievd " << count << " VCBlocks");
+
+  delete it;
+
+  if (blocks.empty()) {
+    LOG_GENERAL(INFO, "Disk has no VCBlock");
+  }
+
+  return true;
+}
+
 bool BlockStorage::GetAllTxBodiesTmp(std::list<TxnHash>& txnHashes) {
   if (!LOOKUP_NODE_MODE) {
     LOG_GENERAL(WARNING,

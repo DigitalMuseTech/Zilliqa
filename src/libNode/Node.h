@@ -480,6 +480,14 @@ class Node : public Executable {
   std::mutex m_mutexPendingTxnStore;
   std::map<uint64_t, std::map<uint32_t, bytes>> m_pendingTxnStore;
 
+  // stores historical map of vcblocks to txblocknum
+  std::mutex m_mutexhistVCBlkForTxBlock;
+  std::map<uint64_t, std::vector<VCBlockSharedPtr>> m_histVCBlocksForTxBlock;
+
+  // stores historical map of vcblocks to dsblocknum
+  std::mutex m_mutexhistVCBlkForDSBlock;
+  std::map<uint64_t, std::vector<VCBlockSharedPtr>> m_histVCBlocksForDSBlock;
+
   // whether txns dist window open
   std::atomic<bool> m_txn_distribute_window_open{};
 

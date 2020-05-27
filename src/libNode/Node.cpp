@@ -717,6 +717,52 @@ bool Node::StartRetrieveHistory(const SyncType syncType,
         m_mediator.m_lookup->m_exchangeWhitelisted);
   }
 
+  // fetch vcblocks from disk
+  if (LOOKUP_NODE_MODE && ARCHIVAL_LOOKUP && MULTIPLIER_SYNC_MODE) {
+    std::list<VCBlockSharedPtr> vcblocks;
+    if (!BlockStorage::GetBlockStorage().GetAllVCBlocks(vcblocks)) {
+      LOG_GENERAL(WARNING, "Failed to get vcBlocks");
+      return false;
+    }
+
+    lock(m_mutexhistVCBlkForDSBlock, m_mutexhistVCBlkForTxBlock);
+    lock_guard<mutex> g(m_mutexhistVCBlkForDSBlock, adopt_lock);
+    lock_guard<mutex> g2(m_mutexhistVCBlkForTxBlock, adopt_lock);
+    m_histVCBlocksForDSBlock.clear();
+    m_histVCBlocksForTxBlock.clear();
+    for (const auto& block : vcblocks) {
+      if (m_mediator.m_ds->IsDSBlockVCState(
+              block->GetHeader().GetViewChangeState())) {
+        // this vcblock belongs to dsepoch (some dsblock)
+        auto dsEpoch = block->GetHeader().GetViewChangeDSEpochNo();
+        m_histVCBlocksForDSBlock[dsEpoch].emplace_back(block);
+      } else {
+        // this vc blocks belongs to tx epoch (some txblock)
+        auto txEpoch = block->GetHeader().GetViewChangeEpochNo();
+        m_histVCBlocksForTxBlock[txEpoch].emplace_back(block);
+      }
+    }
+
+    // sorted map values by vccounter
+    for (auto it = m_histVCBlocksForTxBlock.begin();
+         it != m_histVCBlocksForTxBlock.end(); it++) {
+      sort(it->second.begin(), it->second.end(),
+           [](const VCBlockSharedPtr& a, const VCBlockSharedPtr& b) {
+             return a->GetHeader().GetViewChangeCounter() <
+                    b->GetHeader().GetViewChangeCounter();
+           });
+    }
+
+    for (auto it = m_histVCBlocksForDSBlock.begin();
+         it != m_histVCBlocksForDSBlock.end(); it++) {
+      sort(it->second.begin(), it->second.end(),
+           [](const VCBlockSharedPtr& a, const VCBlockSharedPtr& b) {
+             return a->GetHeader().GetViewChangeCounter() <
+                    b->GetHeader().GetViewChangeCounter();
+           });
+    }
+  }
+
   if (/* new node not part of ds committee */ (SyncType::NEW_SYNC == syncType &&
                                                !bDS) ||
       SyncType::NEW_LOOKUP_SYNC == syncType ||

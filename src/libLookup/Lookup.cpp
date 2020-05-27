@@ -731,7 +731,8 @@ bool Lookup::GetDSBlockFromL2lDataProvider(uint64_t blockNum) {
     unique_lock<mutex> lock(m_mediator.m_lookup->m_mutexVCDSBlockProcessed);
     if (m_mediator.m_lookup->cv_vcDsBlockProcessed.wait_for(
             lock, chrono::seconds(SEED_SYNC_SMALL_PULL_INTERVAL)) ==
-        std::cv_status::timeout) {
+            std::cv_status::timeout &&
+        !m_exitPullThread) {
       LOG_GENERAL(WARNING,
                   "GetDSBlockFromL2lDataProvider Timeout... may be ds block "
                   "yet to be mined");
@@ -756,7 +757,8 @@ bool Lookup::GetVCFinalBlockFromL2lDataProvider(uint64_t blockNum) {
     unique_lock<mutex> lock(m_mediator.m_lookup->m_mutexVCFinalBlockProcessed);
     if (m_mediator.m_lookup->cv_vcFinalBlockProcessed.wait_for(
             lock, chrono::seconds(SEED_SYNC_SMALL_PULL_INTERVAL)) ==
-        std::cv_status::timeout) {
+            std::cv_status::timeout &&
+        !m_exitPullThread) {
       LOG_GENERAL(WARNING,
                   "GetVCFinalBlockFromL2lDataProvider Timeout... may be "
                   "vc/final block yet to be mined");
@@ -1211,9 +1213,29 @@ bool Lookup::ProcessGetDSBlockFromL2l(const bytes& message, unsigned int offset,
   // check the raw store if requested ds block message exist
   {
     std::lock_guard<mutex> g1(m_mediator.m_node->m_mutexVCDSBlockStore);
+
+    if (m_mediator.m_node->m_vcDSBlockStore.find(blockNum) ==
+        m_mediator.m_node->m_vcDSBlockStore.end()) {
+      // if asking for older or current ds block and not found in local store,
+      // try recreating latest ds block from disk. Issue is we can't recreate it
+      // for older ds block becuase we dont dont store sharding structure of
+      // older ds epoch but only for latest one.
+      // Receiving end should process the latest ds block and know that its
+      // lagging too much and initiate Rejoin.
+      uint64_t latestDSBlkNum =
+          m_mediator.m_dsBlockChain.GetLastBlock().GetHeader().GetBlockNum();
+      if (blockNum <= latestDSBlkNum) {
+        blockNum = latestDSBlkNum;
+        ComposeAndStoreVCDSBlockMessage(blockNum);
+      } else {
+        // Have not received DS Block yet.
+        return true;
+      }
+    }
+
     auto it = m_mediator.m_node->m_vcDSBlockStore.find(blockNum);
     if (it != m_mediator.m_node->m_vcDSBlockStore.end()) {
-      LOG_GENERAL(INFO, requestorPeer);
+      LOG_GENERAL(INFO, "Sending VCDSBlock msg to " << requestorPeer);
       P2PComm::GetInstance().SendMessage(requestorPeer, it->second);
     }
   }
@@ -1266,6 +1288,18 @@ bool Lookup::ProcessGetVCFinalBlockFromL2l(const bytes& message,
   // check the raw store if requested vcfinalblock message exist
   {
     std::lock_guard<mutex> g1(m_mediator.m_node->m_mutexVCFinalBlock);
+    if (m_mediator.m_node->m_vcFinalBlockStore.find(blockNum) ==
+        m_mediator.m_node->m_vcFinalBlockStore.end()) {
+      // if asking for older final block and not found in local store, try
+      // recreating it from disk
+      if (blockNum < m_mediator.m_currentEpochNum - 1) {
+        ComposeAndStoreVCFinalBlockMessage(blockNum);
+      } else {
+        // Have not received FB yet.
+        return true;
+      }
+    }
+
     auto it = m_mediator.m_node->m_vcFinalBlockStore.find(blockNum);
     if (it != m_mediator.m_node->m_vcFinalBlockStore.end()) {
       LOG_GENERAL(INFO, "Sending VCFinalBlock msg to " << requestorPeer);
@@ -1322,7 +1356,6 @@ bool Lookup::ProcessGetMBnForwardTxnFromL2l(const bytes& message,
 
   // check the raw store if requested mbtxns message exist
   int retryCount = MAX_FETCH_BLOCK_RETRIES;
-
   while (retryCount-- > 0) {
     {
       std::lock_guard<mutex> g1(m_mediator.m_node->m_mutexMBnForwardedTxnStore);
@@ -1336,9 +1369,167 @@ bool Lookup::ProcessGetMBnForwardTxnFromL2l(const bytes& message,
         }
       } else {
         LOG_GENERAL(WARNING, "Failed to fetch mbtxns message, retry... ");
+        // if first retry and asking for mbtxn of older tx blocks
+        if ((retryCount == MAX_FETCH_BLOCK_RETRIES - 1) &&
+            (blockNum < m_mediator.m_currentEpochNum - 1)) {
+          ComposeAndStoreMBnForwardTxnMessage(blockNum);
+        }
       }
     }
     this_thread::sleep_for(chrono::seconds(2));
+  }
+
+  return true;
+}
+
+bool Lookup::ComposeAndStoreMBnForwardTxnMessage(const uint64_t& blockNum) {
+  if (!LOOKUP_NODE_MODE || !ARCHIVAL_LOOKUP || !MULTIPLIER_SYNC_MODE) {
+    LOG_GENERAL(
+        WARNING,
+        "Lookup::ComposeAndStoreMBnForwardTxnMessage not expected to be called "
+        "from other than the LookUp node.");
+    return true;
+  }
+
+  LOG_MARKER();
+
+  TxBlockSharedPtr finalBlkPtr;
+  if (!BlockStorage::GetBlockStorage().GetTxBlock(blockNum, finalBlkPtr)) {
+    LOG_GENERAL(WARNING,
+                "Failed to fetch txblock " << blockNum << " from disk");
+    return false;
+  }
+
+  const auto& microBlockInfos = finalBlkPtr->GetMicroBlockInfos();
+  for (const auto& info : microBlockInfos) {
+    MicroBlockSharedPtr microBlockPtr;
+    std::vector<TransactionWithReceipt> txns_to_send;
+
+    if (BlockStorage::GetBlockStorage().GetMicroBlock(info.m_microBlockHash,
+                                                      microBlockPtr)) {
+      const vector<TxnHash>& tx_hashes = microBlockPtr->GetTranHashes();
+      for (const auto& tx_hash : tx_hashes) {
+        TxBodySharedPtr txBodyPtr;
+        if (!BlockStorage::GetBlockStorage().GetTxBody(tx_hash, txBodyPtr)) {
+          LOG_GENERAL(WARNING, "Could not find " << tx_hash);
+          continue;
+        }
+        txns_to_send.emplace_back(*txBodyPtr);
+      }
+
+      // Transaction body sharing
+      bytes mb_txns_message = {MessageType::NODE,
+                               NodeInstructionType::MBNFORWARDTRANSACTION};
+
+      if (!Messenger::SetNodeMBnForwardTransaction(
+              mb_txns_message, MessageOffset::BODY, *microBlockPtr,
+              txns_to_send)) {
+        LOG_EPOCH(WARNING, m_mediator.m_currentEpochNum,
+                  "Messenger::SetNodeMBnForwardTransaction failed.");
+        return false;
+      }
+
+      // Store to local map for MBNFORWARDTRANSACTION
+      m_mediator.m_node
+          ->m_mbnForwardedTxnStore[microBlockPtr->GetHeader().GetEpochNum()]
+                                  [microBlockPtr->GetHeader().GetShardId()] =
+          mb_txns_message;
+    } else {
+      LOG_GENERAL(WARNING,
+                  "Failed to find mb in disk : " << info.m_microBlockHash);
+    }
+  }
+  return true;
+}
+
+bool Lookup::ComposeAndStoreVCDSBlockMessage(const uint64_t& blockNum) {
+  if (!LOOKUP_NODE_MODE || !ARCHIVAL_LOOKUP || !MULTIPLIER_SYNC_MODE) {
+    LOG_GENERAL(
+        WARNING,
+        "Lookup::ComposeAndStoreVCDSBlockMessage not expected to be called "
+        "from other than the LookUp node.");
+    return false;
+  }
+
+  LOG_MARKER();
+
+  DSBlockSharedPtr vcdsBlkPtr;
+  if (!BlockStorage::GetBlockStorage().GetDSBlock(blockNum, vcdsBlkPtr)) {
+    LOG_GENERAL(WARNING,
+                "Failed to fetch dsblock " << blockNum << " from disk");
+    return false;
+  }
+
+  std::vector<VCBlock> vcBlocks;
+  {
+    std::lock_guard<mutex> g1(m_mediator.m_node->m_mutexhistVCBlkForDSBlock);
+    auto vcBlockPtrs = m_mediator.m_node->m_histVCBlocksForDSBlock[blockNum];
+    for (const auto& it : vcBlockPtrs) {
+      vcBlocks.emplace_back(*it);
+    }
+  }
+
+  bytes vcdsblock_message = {MessageType::NODE, NodeInstructionType::DSBLOCK};
+
+  if (!Messenger::SetNodeVCDSBlocksMessage(
+          vcdsblock_message, MessageOffset::BODY, 0, *vcdsBlkPtr, vcBlocks,
+          SHARDINGSTRUCTURE_VERSION, m_mediator.m_ds->m_shards)) {
+    LOG_EPOCH(WARNING, m_mediator.m_currentEpochNum,
+              "Messenger::SetNodeVCDSBlocksMessage failed " << *vcdsBlkPtr);
+    return false;
+  } else {
+    // Store to local map for VCDSBLOCK
+    m_mediator.m_node->m_vcFinalBlockStore[blockNum] = vcdsblock_message;
+  }
+
+  return true;
+}
+
+bool Lookup::ComposeAndStoreVCFinalBlockMessage(const uint64_t& blockNum) {
+  if (!LOOKUP_NODE_MODE || !ARCHIVAL_LOOKUP || !MULTIPLIER_SYNC_MODE) {
+    LOG_GENERAL(
+        WARNING,
+        "Lookup::ComposeAndStoreVCFinalBlockMessage not expected to be called "
+        "from other than the LookUp node.");
+    return false;
+  }
+
+  LOG_MARKER();
+
+  TxBlockSharedPtr finalBlkPtr;
+  if (!BlockStorage::GetBlockStorage().GetTxBlock(blockNum, finalBlkPtr)) {
+    LOG_GENERAL(WARNING,
+                "Failed to fetch txblock " << blockNum << " from disk");
+    return false;
+  }
+
+  bytes stateDelta = {};
+  if (!BlockStorage::GetBlockStorage().GetStateDelta(blockNum, stateDelta)) {
+    LOG_GENERAL(WARNING, "Failed to fetch statedelta from disk for txblock "
+                             << blockNum);
+    return false;
+  }
+
+  std::vector<VCBlock> vcBlocks;
+  {
+    std::lock_guard<mutex> g1(m_mediator.m_node->m_mutexhistVCBlkForTxBlock);
+    auto vcBlockPtrs = m_mediator.m_node->m_histVCBlocksForTxBlock[blockNum];
+    for (const auto& it : vcBlockPtrs) {
+      vcBlocks.emplace_back(*it);
+    }
+  }
+
+  bytes vc_fb_message = {MessageType::NODE, NodeInstructionType::VCFINALBLOCK};
+  if (!Messenger::SetNodeVCFinalBlock(vc_fb_message, MessageOffset::BODY,
+                                      finalBlkPtr->GetHeader().GetDSBlockNum(),
+                                      0 /*dummy since unused*/, *finalBlkPtr,
+                                      stateDelta, vcBlocks)) {
+    LOG_GENERAL(WARNING, "Messenger::SetNodeVCFinalBlock failed");
+  } else {
+    // Store to local map for VCFINALBLOCK
+    m_mediator.m_node
+        ->m_vcFinalBlockStore[finalBlkPtr->GetHeader().GetBlockNum()] =
+        vc_fb_message;
   }
 
   return true;
@@ -2989,6 +3180,7 @@ void Lookup::CommitTxBlocks(const vector<TxBlock>& txBlocks) {
             bool dsBlockReceived = false;
             LOG_GENERAL(INFO,
                         "Starting the pull thread from l2l_data_providers");
+            m_exitPullThread = false;
             while (GetSyncType() == SyncType::NO_SYNC) {
               if ((m_mediator.m_currentEpochNum % NUM_FINAL_BLOCK_PER_POW ==
                    0) &&
@@ -2997,6 +3189,10 @@ void Lookup::CommitTxBlocks(const vector<TxBlock>& txBlocks) {
                 if (GetDSBlockFromL2lDataProvider(
                         m_mediator.m_dsBlockChain.GetBlockCount())) {
                   dsBlockReceived = true;
+                  if (m_exitPullThread) {
+                    m_exitPullThread = false;
+                    break;
+                  }
                 } else {
                   continue;
                 }
@@ -3006,7 +3202,10 @@ void Lookup::CommitTxBlocks(const vector<TxBlock>& txBlocks) {
                         m_mediator.m_txBlockChain.GetBlockCount())) {
                   // reset the dsblockreceived flag
                   dsBlockReceived = false;
-
+                  if (m_exitPullThread) {
+                    m_exitPullThread = false;
+                    break;
+                  }
                   FetchMbTxPendingTxMessageFromL2l(
                       m_mediator.m_txBlockChain.GetLastBlock()
                           .GetHeader()
@@ -4385,6 +4584,11 @@ void Lookup::RejoinAsNewLookup(bool fromLookup) {
   LOG_MARKER();
   if (m_mediator.m_lookup->GetSyncType() == SyncType::NO_SYNC) {
     m_mediator.m_lookup->SetSyncType(SyncType::NEW_LOOKUP_SYNC);
+    // Exit the existing pull thread.
+    if (!MULTIPLIER_SYNC_MODE) {
+      m_exitPullThread = true;
+      this_thread::sleep_for(chrono::seconds(SEED_SYNC_SMALL_PULL_INTERVAL));
+    }
     auto func1 = [this]() mutable -> void {
       if (m_lookupServer) {
         m_lookupServer->StopListening();
@@ -4397,7 +4601,8 @@ void Lookup::RejoinAsNewLookup(bool fromLookup) {
     };
     DetachedFunction(1, func1);
 
-    if (fromLookup) {
+    if (fromLookup && MULTIPLIER_SYNC_MODE) {  // level2lookups and seed nodes
+                                               // syncing via multiplier
       LOG_GENERAL(INFO, "Syncing from lookup ...");
       auto func2 = [this]() mutable -> void { StartSynchronization(); };
       DetachedFunction(1, func2);
