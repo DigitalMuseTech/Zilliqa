@@ -744,18 +744,16 @@ bool Node::StartRetrieveHistory(const SyncType syncType,
     }
 
     // sorted map values by vccounter
-    for (auto it = m_histVCBlocksForTxBlock.begin();
-         it != m_histVCBlocksForTxBlock.end(); it++) {
-      sort(it->second.begin(), it->second.end(),
+    for (auto it : m_histVCBlocksForTxBlock) {
+      sort(it.second.begin(), it.second.end(),
            [](const VCBlockSharedPtr& a, const VCBlockSharedPtr& b) {
              return a->GetHeader().GetViewChangeCounter() <
                     b->GetHeader().GetViewChangeCounter();
            });
     }
 
-    for (auto it = m_histVCBlocksForDSBlock.begin();
-         it != m_histVCBlocksForDSBlock.end(); it++) {
-      sort(it->second.begin(), it->second.end(),
+    for (auto it : m_histVCBlocksForDSBlock) {
+      sort(it.second.begin(), it.second.end(),
            [](const VCBlockSharedPtr& a, const VCBlockSharedPtr& b) {
              return a->GetHeader().GetViewChangeCounter() <
                     b->GetHeader().GetViewChangeCounter();

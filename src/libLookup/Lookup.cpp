@@ -1211,24 +1211,24 @@ bool Lookup::ProcessGetDSBlockFromL2l(const bytes& message, unsigned int offset,
   }
 
   // check the raw store if requested ds block message exist
+  // if asking for older or current ds block and not found in local store,
+  // try recreating latest ds block from disk. Issue is we can't recreate it
+  // for older ds block because we don't store sharding structure of
+  // older ds epoch but only for latest one.
+  // Receiving seed should process the latest ds block and know that its
+  // lagging too much and will initiate Rejoin.
   {
+    uint64_t latestDSBlkNum =
+        m_mediator.m_dsBlockChain.GetLastBlock().GetHeader().GetBlockNum();
+    if (blockNum < latestDSBlkNum) {
+      blockNum = latestDSBlkNum;
+    }
+
     std::lock_guard<mutex> g1(m_mediator.m_node->m_mutexVCDSBlockStore);
 
     if (m_mediator.m_node->m_vcDSBlockStore.find(blockNum) ==
         m_mediator.m_node->m_vcDSBlockStore.end()) {
-      // if asking for older or current ds block and not found in local store,
-      // try recreating latest ds block from disk. Issue is we can't recreate it
-      // for older ds block because we don't store sharding structure of
-      // older ds epoch but only for latest one.
-      // Receiving seed should process the latest ds block and know that its
-      // lagging too much and will initiate Rejoin.
-      uint64_t latestDSBlkNum =
-          m_mediator.m_dsBlockChain.GetLastBlock().GetHeader().GetBlockNum();
-      if (blockNum <= latestDSBlkNum) {
-        blockNum = latestDSBlkNum;
-      }
-      if (m_mediator.m_node->m_vcDSBlockStore.find(blockNum) ==
-          m_mediator.m_node->m_vcDSBlockStore.end()) {
+      if (blockNum == latestDSBlkNum) {
         ComposeAndStoreVCDSBlockMessage(blockNum);
       } else {
         // Have not received DS Block yet.
@@ -1289,27 +1289,24 @@ bool Lookup::ProcessGetVCFinalBlockFromL2l(const bytes& message,
   }
 
   // check the raw store if requested vcfinalblock message exist
+  // if asking for vcfinalblock message from older dsepoch, always send one
+  // for latest txepoch. if asking for vcfinalblock message from current
+  // dsepoch  and not found in local store, try recreating it from disk for
+  // requested blocknum. Receiving seed should process the latest
+  // vcfinalblock message and know that its lagging too much and will
+  // initiate Rejoin.
   {
+    uint64_t lowestLimitNum =
+        m_mediator.m_dsBlockChain.GetLastBlock().GetHeader().GetEpochNum();
+    if (blockNum < lowestLimitNum) {  // requested from older ds epoch
+      blockNum = m_mediator.m_currentEpochNum - 1;
+    }
+
     std::lock_guard<mutex> g1(m_mediator.m_node->m_mutexVCFinalBlock);
     if (m_mediator.m_node->m_vcFinalBlockStore.find(blockNum) ==
         m_mediator.m_node->m_vcFinalBlockStore.end()) {
-      // if asking for vcfinalblock message from older dsepoch, always send one
-      // for latest txepoch. if asking for vcfinalblock message from current
-      // dsepoch  and not found in local store, try recreating it from disk for
-      // requested blocknum. Receiving seed should process the latest
-      // vcfinalblock message and know that its lagging too much and will
-      // initiate Rejoin.
       if (blockNum < m_mediator.m_currentEpochNum - 1) {
-        uint64_t lowestLimitNum =
-            m_mediator.m_dsBlockChain.GetLastBlock().GetHeader().GetEpochNum();
-        if (blockNum < lowestLimitNum) {  // requested from older ds epoch
-          blockNum = m_mediator.m_currentEpochNum - 1;
-        }
-        if (m_mediator.m_node->m_vcFinalBlockStore.find(blockNum) ==
-            m_mediator.m_node->m_vcFinalBlockStore
-                .end()) {  // if latest one not found in store as well
-          ComposeAndStoreVCFinalBlockMessage(blockNum);
-        }
+        ComposeAndStoreVCFinalBlockMessage(blockNum);
       } else {
         // Have not received FB yet.
         return true;
@@ -1469,6 +1466,19 @@ bool Lookup::ComposeAndStoreVCDSBlockMessage(const uint64_t& blockNum) {
 
   LOG_MARKER();
 
+  // Hack to make sure sharding structure is received if this node had just
+  // rejoined.
+  DequeOfShard shardingStruct;
+  {
+    std::lock_guard<mutex> lock(m_mediator.m_ds->m_mutexShards);
+    if (m_mediator.m_ds->m_shards.empty()) {
+      LOG_GENERAL(INFO,
+                  "Sharding structure for current ds epoch yet not received.");
+      return false;
+    }
+    shardingStruct = m_mediator.m_ds->m_shards;
+  }
+
   DSBlockSharedPtr vcdsBlkPtr;
   if (!BlockStorage::GetBlockStorage().GetDSBlock(blockNum, vcdsBlkPtr)) {
     LOG_GENERAL(WARNING,
@@ -1489,7 +1499,7 @@ bool Lookup::ComposeAndStoreVCDSBlockMessage(const uint64_t& blockNum) {
 
   if (!Messenger::SetNodeVCDSBlocksMessage(
           vcdsblock_message, MessageOffset::BODY, 0, *vcdsBlkPtr, vcBlocks,
-          SHARDINGSTRUCTURE_VERSION, m_mediator.m_ds->m_shards)) {
+          SHARDINGSTRUCTURE_VERSION, shardingStruct)) {
     LOG_EPOCH(WARNING, m_mediator.m_currentEpochNum,
               "Messenger::SetNodeVCDSBlocksMessage failed " << *vcdsBlkPtr);
     return false;
