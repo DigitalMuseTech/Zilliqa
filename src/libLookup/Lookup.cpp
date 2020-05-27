@@ -1218,10 +1218,10 @@ bool Lookup::ProcessGetDSBlockFromL2l(const bytes& message, unsigned int offset,
         m_mediator.m_node->m_vcDSBlockStore.end()) {
       // if asking for older or current ds block and not found in local store,
       // try recreating latest ds block from disk. Issue is we can't recreate it
-      // for older ds block becuase we dont dont store sharding structure of
+      // for older ds block because we don't store sharding structure of
       // older ds epoch but only for latest one.
-      // Receiving end should process the latest ds block and know that its
-      // lagging too much and initiate Rejoin.
+      // Receiving seed should process the latest ds block and know that its
+      // lagging too much and will initiate Rejoin.
       uint64_t latestDSBlkNum =
           m_mediator.m_dsBlockChain.GetLastBlock().GetHeader().GetBlockNum();
       if (blockNum <= latestDSBlkNum) {
@@ -1290,10 +1290,23 @@ bool Lookup::ProcessGetVCFinalBlockFromL2l(const bytes& message,
     std::lock_guard<mutex> g1(m_mediator.m_node->m_mutexVCFinalBlock);
     if (m_mediator.m_node->m_vcFinalBlockStore.find(blockNum) ==
         m_mediator.m_node->m_vcFinalBlockStore.end()) {
-      // if asking for older final block and not found in local store, try
-      // recreating it from disk
+      // if asking for vcfinalblock message from older dsepoch, always send one
+      // for latest txepoch. if asking for vcfinalblock message from current
+      // dsepoch  and not found in local store, try recreating it from disk for
+      // requested blocknum. Receiving seed should process the latest
+      // vcfinalblock message and know that its lagging too much and will
+      // initiate Rejoin.
       if (blockNum < m_mediator.m_currentEpochNum - 1) {
-        ComposeAndStoreVCFinalBlockMessage(blockNum);
+        uint64_t lowestLimitNum =
+            m_mediator.m_dsBlockChain.GetLastBlock().GetHeader().GetEpochNum();
+        if (blockNum < lowestLimitNum) {  // requested from older ds epoch
+          blockNum = lowestLimitNum;
+          if (m_mediator.m_node->m_vcFinalBlockStore.find(lowestLimitNum) ==
+              m_mediator.m_node->m_vcFinalBlockStore
+                  .end()) {  // if latest one not found in store as well
+            ComposeAndStoreVCFinalBlockMessage(blockNum);
+          }
+        }
       } else {
         // Have not received FB yet.
         return true;
@@ -1479,7 +1492,7 @@ bool Lookup::ComposeAndStoreVCDSBlockMessage(const uint64_t& blockNum) {
     return false;
   } else {
     // Store to local map for VCDSBLOCK
-    m_mediator.m_node->m_vcFinalBlockStore[blockNum] = vcdsblock_message;
+    m_mediator.m_node->m_vcDSBlockStore[blockNum] = vcdsblock_message;
   }
 
   return true;
@@ -1527,9 +1540,7 @@ bool Lookup::ComposeAndStoreVCFinalBlockMessage(const uint64_t& blockNum) {
     LOG_GENERAL(WARNING, "Messenger::SetNodeVCFinalBlock failed");
   } else {
     // Store to local map for VCFINALBLOCK
-    m_mediator.m_node
-        ->m_vcFinalBlockStore[finalBlkPtr->GetHeader().GetBlockNum()] =
-        vc_fb_message;
+    m_mediator.m_node->m_vcFinalBlockStore[blockNum] = vc_fb_message;
   }
 
   return true;
