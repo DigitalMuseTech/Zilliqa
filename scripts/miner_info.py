@@ -108,7 +108,7 @@ def make_options_dictionary(options_dict):
 	options_dict["whitelist_add"] = "AddToBlacklistExclusion"
 	options_dict["whitelist_remove"] = "RemoveFromBlacklistExclusion"
 	options_dict["register_exchange"] = "AddToExchangeWhitelist"
-	options_dict["unregister_exchange"] = "RemoveFromExchangeWhitelist"
+	options_dict["deregister_exchange"] = "RemoveFromExchangeWhitelist"
 	options_dict["ds_difficulty"] = "GetPrevDSDifficulty"
 	options_dict["difficulty"] = "GetPrevDifficulty"
 	options_dict["set_sendsccallstods"] = "ToggleSendSCCallsToDS"
