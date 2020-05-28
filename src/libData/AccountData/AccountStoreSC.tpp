@@ -289,15 +289,6 @@ bool AccountStoreSC<MAP>::UpdateAccounts(const uint64_t& blockNum,
         ret_checker = false;
       }
 
-      if (ret_checker && !is_library) {
-        std::map<std::string, bytes> t_map_depth_map;
-        t_map_depth_map.emplace(
-            Contract::ContractStorage2::GetContractStorage().GenerateStorageKey(
-                toAddr, FIELDS_MAP_DEPTH_INDICATOR, {}),
-            map_depth_data);
-        toAccount->UpdateStates(toAddr, t_map_depth_map, {}, true);
-      }
-
       // *************************************************************************
       // Undergo scilla runner
       bool ret = true;
@@ -442,10 +433,25 @@ bool AccountStoreSC<MAP>::UpdateAccounts(const uint64_t& blockNum,
         }
       }
 
-      toAccount->SetStorageRoot(
-          Contract::ContractStorage2::GetContractStorage().GetContractStateHash(
-              toAddr, true, true));
+      /// update contract state
+      std::map<std::string, bytes> t_contract_meta_data;
 
+      /// inserting address to create the uniqueness of the contract merkle trie
+      t_contract_meta_data.emplace(
+          Contract::ContractStorage2::GenerateStorageKey(
+              toAddr, CONTRACT_ADDR_INDICATOR, {}),
+          toAddr.asBytes());
+
+      if (!is_library) {
+        t_contract_meta_data.emplace(
+            Contract::ContractStorage2::GenerateStorageKey(
+                toAddr, FIELDS_MAP_DEPTH_INDICATOR, {}),
+            map_depth_data);
+      }
+      toAccount->UpdateStates(toAddr, t_contract_meta_data, {}, true, false,
+                              false);
+
+      /// calculate total gas in receipt
       receipt.SetCumGas(transaction.GetGasLimit() - gasRemained);
 
       if (is_library) {
@@ -586,7 +592,8 @@ bool AccountStoreSC<MAP>::UpdateAccounts(const uint64_t& blockNum,
         cv_callContract.notify_all();
       };
 
-      Contract::ContractStorage2::GetContractStorage().BufferCurrentState();
+      Contract::ContractStorage2::GetContractStorage()
+          .ResetBufferedAtomicState();
       DetachedFunction(1, func);
 
       {
@@ -618,7 +625,7 @@ bool AccountStoreSC<MAP>::UpdateAccounts(const uint64_t& blockNum,
 
       if (ret && !ParseCallContract(gasRemained, runnerPrint, receipt,
                                     tree_depth, scilla_version)) {
-        Contract::ContractStorage2::GetContractStorage().RevertPrevState();
+        Contract::ContractStorage2::GetContractStorage().RevertAtomicState();
         receipt.RemoveAllTransitions();
         ret = false;
       }
@@ -1671,8 +1678,9 @@ void AccountStoreSC<MAP>::ProcessStorageRootUpdateBuffer() {
         continue;
       }
       account->SetStorageRoot(
-          Contract::ContractStorage2::GetContractStorage().GetContractStateHash(
-              addr, true, true));
+          Contract::ContractStorage2::GetContractStorage().UpdateContractTrie(
+              addr, account->GetStorageRoot(), true /*temp*/,
+              false /*revertible*/, true /*fromExternal*/));
     }
   }
   CleanStorageRootUpdateBuffer();
